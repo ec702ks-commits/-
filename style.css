@@ -60,6 +60,33 @@ main {
   margin: 0 0 10px;
 }
 
+.card h3 {
+  font-size: 0.92rem;
+  margin: 18px 0 8px;
+  color: var(--text-muted);
+}
+
+.card h3:first-child {
+  margin-top: 0;
+}
+
+.upload-block {
+  margin-bottom: 18px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.upload-block:last-of-type {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.upload-label {
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin: 0 0 8px;
+}
+
 .hidden {
   display: none;
 }
@@ -157,6 +184,11 @@ textarea {
   background: var(--primary-dark);
 }
 
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .btn.send {
   background: #17803d;
   color: #fff;
@@ -189,6 +221,15 @@ textarea {
 .customer-item.done {
   border-color: var(--success);
   background: #f0fdf4;
+}
+
+.customer-item.missing-phone {
+  border-color: #d97706;
+  background: #fffbeb;
+}
+
+.status-badge.missing {
+  color: #b45309;
 }
 
 .customer-item .name-line {

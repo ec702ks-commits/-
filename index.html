@@ -15,24 +15,58 @@
 <main>
 
   <section id="step-upload" class="card">
-    <h2>1. 고객 명단 엑셀 업로드</h2>
-    <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" class="visually-hidden" />
-    <label for="fileInput" class="btn primary file-label">엑셀 파일 선택</label>
-    <p class="hint" id="fileNameDisplay"></p>
+    <h2>1. 엑셀 업로드</h2>
+    <p class="hint">만기상품 엑셀은 필수입니다. 연락처가 그 파일에 없고 별도 파일에 있다면, 연락처 엑셀도 함께 올려주세요.</p>
+
+    <div class="upload-block">
+      <p class="upload-label">① 만기상품 엑셀 (필수)</p>
+      <input type="file" id="fileInputProducts" accept=".xlsx,.xls,.csv" class="visually-hidden" />
+      <label for="fileInputProducts" class="btn primary file-label">만기상품 엑셀 선택</label>
+      <p class="hint" id="fileNameDisplayProducts"></p>
+    </div>
+
+    <div class="upload-block">
+      <p class="upload-label">② 연락처 엑셀 (선택 — 별도 파일인 경우)</p>
+      <input type="file" id="fileInputContacts" accept=".xlsx,.xls,.csv" class="visually-hidden" />
+      <label for="fileInputContacts" class="btn primary file-label">연락처 엑셀 선택</label>
+      <p class="hint" id="fileNameDisplayContacts"></p>
+    </div>
+
+    <button id="proceedToMapping" class="btn primary" disabled>다음</button>
     <p class="hint">업로드한 파일은 이 화면(브라우저) 안에서만 처리되며, 어디로도 전송되지 않습니다.</p>
   </section>
 
   <section id="step-mapping" class="card hidden">
     <h2>2. 컬럼 매핑</h2>
-    <p class="hint">엑셀의 각 항목이 어떤 컬럼인지 선택해 주세요.</p>
-    <div class="mapping-grid">
-      <label>고객명 <select id="mapName"></select></label>
-      <label>휴대폰번호(또는 앞부분) <select id="mapPhone"></select></label>
-      <label>휴대폰번호 뒷자리 (선택, 두 컬럼으로 나뉜 경우) <select id="mapPhone2"></select></label>
-      <label>상품유형(DC/IRP) <select id="mapType"></select></label>
-      <label>상품명 <select id="mapProduct"></select></label>
-      <label>만기일 <select id="mapDate"></select></label>
+
+    <div id="mappingProducts">
+      <h3 id="productsMappingTitle">만기상품 엑셀</h3>
+      <div class="mapping-grid">
+        <label>고객명 <select id="mapName"></select></label>
+        <label>매칭 보조 키 (선택 — 동명이인이 있을 때, 예: 생년월일) <select id="mapAuxProducts"></select></label>
+        <label>상품유형(DC/IRP) <select id="mapType"></select></label>
+        <label>상품명 <select id="mapProduct"></select></label>
+        <label>만기일 <select id="mapDate"></select></label>
+      </div>
     </div>
+
+    <div id="mappingProductsPhone">
+      <div class="mapping-grid">
+        <label>휴대폰번호(또는 앞부분) <select id="mapPhone"></select></label>
+        <label>휴대폰번호 뒷자리 (선택, 두 컬럼으로 나뉜 경우) <select id="mapPhone2"></select></label>
+      </div>
+    </div>
+
+    <div id="mappingContacts" class="hidden">
+      <h3>연락처 엑셀</h3>
+      <div class="mapping-grid">
+        <label>고객명 <select id="mapNameContacts"></select></label>
+        <label>매칭 보조 키 (선택 — 위와 같은 항목) <select id="mapAuxContacts"></select></label>
+        <label>휴대폰번호(또는 앞부분) <select id="mapPhoneContacts"></select></label>
+        <label>휴대폰번호 뒷자리 (선택) <select id="mapPhone2Contacts"></select></label>
+      </div>
+    </div>
+
     <button id="applyMapping" class="btn primary">다음</button>
   </section>
 

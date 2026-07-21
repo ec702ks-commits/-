@@ -2,10 +2,10 @@
   "use strict";
 
   var state = {
-    headers: [],
-    rows: [], // array of objects keyed by header
-    mapping: { name: "", phone: "", phone2: "", type: "", product: "", date: "" },
-    filtered: [], // normalized customer objects for the selected month
+    products: null, // { sheetName, headers, rows }
+    contacts: null, // { sheetName, headers, rows } or null if not uploaded
+    mapping: {},
+    filtered: [],
   };
 
   var FIELD_GUESSES = {
@@ -17,7 +17,8 @@
   };
 
   var TEMPLATE_STORAGE_KEY = "dcirp_sms_template_v1";
-  var MAPPING_STORAGE_KEY = "dcirp_sms_mapping_v1";
+  var MAPPING_STORAGE_KEY_PRODUCTS = "dcirp_sms_mapping_products_v1";
+  var MAPPING_STORAGE_KEY_CONTACTS = "dcirp_sms_mapping_contacts_v1";
 
   var DEFAULT_TEMPLATE =
     "[삼성생명] {이름} 고객님, 가입하신 {상품유형} {상품명} 상품이 {만기일} 만기 예정입니다. " +
@@ -27,18 +28,33 @@
   document.addEventListener("DOMContentLoaded", init);
 
   function init() {
-    el.fileInput = document.getElementById("fileInput");
-    el.fileNameDisplay = document.getElementById("fileNameDisplay");
+    el.fileInputProducts = document.getElementById("fileInputProducts");
+    el.fileNameDisplayProducts = document.getElementById("fileNameDisplayProducts");
+    el.fileInputContacts = document.getElementById("fileInputContacts");
+    el.fileNameDisplayContacts = document.getElementById("fileNameDisplayContacts");
+    el.proceedToMapping = document.getElementById("proceedToMapping");
+
     el.stepMapping = document.getElementById("step-mapping");
     el.stepFilter = document.getElementById("step-filter");
     el.stepTemplate = document.getElementById("step-template");
     el.stepSend = document.getElementById("step-send");
+
+    el.mappingProductsPhone = document.getElementById("mappingProductsPhone");
+    el.mappingContacts = document.getElementById("mappingContacts");
+
     el.mapName = document.getElementById("mapName");
-    el.mapPhone = document.getElementById("mapPhone");
-    el.mapPhone2 = document.getElementById("mapPhone2");
+    el.mapAuxProducts = document.getElementById("mapAuxProducts");
     el.mapType = document.getElementById("mapType");
     el.mapProduct = document.getElementById("mapProduct");
     el.mapDate = document.getElementById("mapDate");
+    el.mapPhone = document.getElementById("mapPhone");
+    el.mapPhone2 = document.getElementById("mapPhone2");
+
+    el.mapNameContacts = document.getElementById("mapNameContacts");
+    el.mapAuxContacts = document.getElementById("mapAuxContacts");
+    el.mapPhoneContacts = document.getElementById("mapPhoneContacts");
+    el.mapPhone2Contacts = document.getElementById("mapPhone2Contacts");
+
     el.applyMapping = document.getElementById("applyMapping");
     el.targetMonth = document.getElementById("targetMonth");
     el.applyFilter = document.getElementById("applyFilter");
@@ -52,18 +68,15 @@
     var now = new Date();
     el.targetMonth.value = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
 
-    el.fileInput.addEventListener("change", handleFile);
+    el.fileInputProducts.addEventListener("change", handleProductsFile);
+    el.fileInputContacts.addEventListener("change", handleContactsFile);
+    el.proceedToMapping.addEventListener("click", handleProceedToMapping);
     el.applyMapping.addEventListener("click", handleApplyMapping);
     el.applyFilter.addEventListener("click", handleApplyFilter);
     el.applyTemplate.addEventListener("click", handleApplyTemplate);
   }
 
-  function handleFile(evt) {
-    var file = evt.target.files[0];
-    if (!file) return;
-
-    el.fileNameDisplay.textContent = "선택된 파일: " + file.name;
-
+  function parseWorkbookFile(file, onSuccess) {
     var reader = new FileReader();
     reader.onload = function (e) {
       try {
@@ -75,21 +88,41 @@
           alert(
             "엑셀에서 표 데이터를 찾을 수 없습니다.\n" +
             "확인한 시트: " + workbook.SheetNames.join(", ") + "\n" +
-            "고객명/연락처 등 컬럼이 있는 표 형태 데이터가 있는지 확인해주세요."
+            "고객명 등 컬럼이 있는 표 형태 데이터가 있는지 확인해주세요."
           );
           return;
         }
 
-        state.headers = extracted.headers;
-        state.rows = extracted.rows;
-        populateMappingSelects();
-        el.stepMapping.classList.remove("hidden");
-        el.stepMapping.scrollIntoView({ behavior: "smooth" });
+        onSuccess(extracted);
       } catch (err) {
         alert("엑셀 파일을 읽는 중 오류가 발생했습니다. 파일 형식을 확인해 주세요.");
       }
     };
     reader.readAsArrayBuffer(file);
+  }
+
+  function handleProductsFile(evt) {
+    var file = evt.target.files[0];
+    if (!file) return;
+    el.fileNameDisplayProducts.textContent = "선택된 파일: " + file.name;
+    parseWorkbookFile(file, function (extracted) {
+      state.products = extracted;
+      updateProceedButton();
+    });
+  }
+
+  function handleContactsFile(evt) {
+    var file = evt.target.files[0];
+    if (!file) return;
+    el.fileNameDisplayContacts.textContent = "선택된 파일: " + file.name;
+    parseWorkbookFile(file, function (extracted) {
+      state.contacts = extracted;
+      updateProceedButton();
+    });
+  }
+
+  function updateProceedButton() {
+    el.proceedToMapping.disabled = !state.products;
   }
 
   var ALL_FIELD_KEYWORDS = Object.keys(FIELD_GUESSES).reduce(function (acc, field) {
@@ -163,48 +196,6 @@
     return null;
   }
 
-  function populateMappingSelects() {
-    var savedMapping = {};
-    try {
-      savedMapping = JSON.parse(localStorage.getItem(MAPPING_STORAGE_KEY) || "{}");
-    } catch (e) {
-      savedMapping = {};
-    }
-
-    var selects = {
-      name: el.mapName,
-      phone: el.mapPhone,
-      phone2: el.mapPhone2,
-      type: el.mapType,
-      product: el.mapProduct,
-      date: el.mapDate,
-    };
-
-    var guesses = guessAllHeaders(state.headers);
-
-    Object.keys(selects).forEach(function (field) {
-      var select = selects[field];
-      select.innerHTML = "";
-      var blank = document.createElement("option");
-      blank.value = "";
-      blank.textContent = "(선택 안 함)";
-      select.appendChild(blank);
-
-      state.headers.forEach(function (h) {
-        var opt = document.createElement("option");
-        opt.value = h;
-        var sample = state.rows[0] ? String(state.rows[0][h] || "").trim() : "";
-        opt.textContent = /^컬럼\d+$/.test(h) && sample ? h + " (예: " + sample + ")" : h;
-        select.appendChild(opt);
-      });
-
-      var preset = savedMapping[field] && state.headers.indexOf(savedMapping[field]) !== -1
-        ? savedMapping[field]
-        : guesses[field];
-      if (preset) select.value = preset;
-    });
-  }
-
   function guessAllHeaders(headers) {
     var claimed = {};
     var result = {};
@@ -225,22 +216,136 @@
     return result;
   }
 
+  function loadSavedMapping(key) {
+    try {
+      return JSON.parse(localStorage.getItem(key) || "{}");
+    } catch (e) {
+      return {};
+    }
+  }
+
+  function fillSelectOptions(select, headers, rows, presetValue) {
+    select.innerHTML = "";
+    var blank = document.createElement("option");
+    blank.value = "";
+    blank.textContent = "(선택 안 함)";
+    select.appendChild(blank);
+
+    headers.forEach(function (h) {
+      var opt = document.createElement("option");
+      opt.value = h;
+      var sample = rows[0] ? String(rows[0][h] || "").trim() : "";
+      opt.textContent = /^컬럼\d+$/.test(h) && sample ? h + " (예: " + sample + ")" : h;
+      select.appendChild(opt);
+    });
+
+    if (presetValue && headers.indexOf(presetValue) !== -1) select.value = presetValue;
+  }
+
+  function populateProductsMapping() {
+    var saved = loadSavedMapping(MAPPING_STORAGE_KEY_PRODUCTS);
+    var guesses = guessAllHeaders(state.products.headers);
+    var headers = state.products.headers;
+    var rows = state.products.rows;
+
+    var fields = { name: el.mapName, auxKey: el.mapAuxProducts, type: el.mapType, product: el.mapProduct, date: el.mapDate };
+    Object.keys(fields).forEach(function (field) {
+      var preset = (saved[field] && headers.indexOf(saved[field]) !== -1) ? saved[field] : (guesses[field] || "");
+      fillSelectOptions(fields[field], headers, rows, preset);
+    });
+
+    if (state.contacts) {
+      el.mappingProductsPhone.classList.add("hidden");
+    } else {
+      el.mappingProductsPhone.classList.remove("hidden");
+      var phoneFields = { phone: el.mapPhone, phone2: el.mapPhone2 };
+      Object.keys(phoneFields).forEach(function (field) {
+        var preset = (saved[field] && headers.indexOf(saved[field]) !== -1) ? saved[field] : (guesses[field] || "");
+        fillSelectOptions(phoneFields[field], headers, rows, preset);
+      });
+    }
+  }
+
+  function populateContactsMapping() {
+    if (!state.contacts) {
+      el.mappingContacts.classList.add("hidden");
+      return;
+    }
+    el.mappingContacts.classList.remove("hidden");
+
+    var saved = loadSavedMapping(MAPPING_STORAGE_KEY_CONTACTS);
+    var guesses = guessAllHeaders(state.contacts.headers);
+    var headers = state.contacts.headers;
+    var rows = state.contacts.rows;
+
+    var fields = { name: el.mapNameContacts, auxKey: el.mapAuxContacts, phone: el.mapPhoneContacts, phone2: el.mapPhone2Contacts };
+    Object.keys(fields).forEach(function (field) {
+      var preset = (saved[field] && headers.indexOf(saved[field]) !== -1) ? saved[field] : (guesses[field] || "");
+      fillSelectOptions(fields[field], headers, rows, preset);
+    });
+  }
+
+  function handleProceedToMapping() {
+    populateProductsMapping();
+    populateContactsMapping();
+    el.stepMapping.classList.remove("hidden");
+    el.stepMapping.scrollIntoView({ behavior: "smooth" });
+  }
+
   function handleApplyMapping() {
-    state.mapping = {
+    var mapping = {
       name: el.mapName.value,
-      phone: el.mapPhone.value,
-      phone2: el.mapPhone2.value,
+      auxKey: el.mapAuxProducts.value,
       type: el.mapType.value,
       product: el.mapProduct.value,
       date: el.mapDate.value,
+      phone: "",
+      phone2: "",
     };
 
-    if (!state.mapping.name || !state.mapping.phone || !state.mapping.date) {
-      alert("고객명, 휴대폰번호, 만기일 컬럼은 필수 선택 사항입니다.");
+    if (!mapping.name || !mapping.date) {
+      alert("고객명, 만기일 컬럼은 필수 선택 사항입니다.");
       return;
     }
 
-    localStorage.setItem(MAPPING_STORAGE_KEY, JSON.stringify(state.mapping));
+    if (state.contacts) {
+      mapping.contactsName = el.mapNameContacts.value;
+      mapping.contactsAuxKey = el.mapAuxContacts.value;
+      mapping.contactsPhone = el.mapPhoneContacts.value;
+      mapping.contactsPhone2 = el.mapPhone2Contacts.value;
+
+      if (!mapping.contactsName || !mapping.contactsPhone) {
+        alert("연락처 엑셀의 고객명, 휴대폰번호 컬럼은 필수 선택 사항입니다.");
+        return;
+      }
+
+      localStorage.setItem(MAPPING_STORAGE_KEY_CONTACTS, JSON.stringify({
+        name: mapping.contactsName,
+        auxKey: mapping.contactsAuxKey,
+        phone: mapping.contactsPhone,
+        phone2: mapping.contactsPhone2,
+      }));
+    } else {
+      mapping.phone = el.mapPhone.value;
+      mapping.phone2 = el.mapPhone2.value;
+
+      if (!mapping.phone) {
+        alert("휴대폰번호 컬럼은 필수 선택 사항입니다.");
+        return;
+      }
+    }
+
+    localStorage.setItem(MAPPING_STORAGE_KEY_PRODUCTS, JSON.stringify({
+      name: mapping.name,
+      auxKey: mapping.auxKey,
+      type: mapping.type,
+      product: mapping.product,
+      date: mapping.date,
+      phone: mapping.phone,
+      phone2: mapping.phone2,
+    }));
+
+    state.mapping = mapping;
 
     el.stepFilter.classList.remove("hidden");
     el.stepFilter.scrollIntoView({ behavior: "smooth" });
@@ -297,6 +402,30 @@
     return digits;
   }
 
+  function normalizeAuxKey(value) {
+    var s = String(value || "").trim();
+    return s.replace(/[\s\-.\/]/g, "");
+  }
+
+  function buildMatchKey(name, aux) {
+    var n = String(name || "").trim();
+    var a = aux !== undefined && aux !== "" ? normalizeAuxKey(aux) : "";
+    return a ? (n + "|" + a) : n;
+  }
+
+  function buildContactsLookup() {
+    var map = {};
+    if (!state.contacts) return map;
+    var cm = state.mapping;
+    state.contacts.rows.forEach(function (row) {
+      var key = buildMatchKey(row[cm.contactsName], cm.contactsAuxKey ? row[cm.contactsAuxKey] : "");
+      if (!key) return;
+      var phone = buildPhoneNumber(row[cm.contactsPhone], cm.contactsPhone2 ? row[cm.contactsPhone2] : "");
+      if (phone) map[key] = phone;
+    });
+    return map;
+  }
+
   function handleApplyFilter() {
     var monthValue = el.targetMonth.value;
     if (!monthValue) {
@@ -308,24 +437,41 @@
     var targetMonth = Number(parts[1]);
 
     var m = state.mapping;
-    state.filtered = state.rows
+    var contactsLookup = state.contacts ? buildContactsLookup() : null;
+
+    state.filtered = state.products.rows
       .map(function (row) {
         var dateValue = parseDate(row[m.date]);
-        var phoneRaw = buildPhoneNumber(row[m.phone], m.phone2 ? row[m.phone2] : "");
+        var name = String(row[m.name] || "").trim();
+        var phone, phoneMissing;
+
+        if (contactsLookup) {
+          var key = buildMatchKey(name, m.auxKey ? row[m.auxKey] : "");
+          phone = contactsLookup[key] || "";
+          phoneMissing = !phone;
+        } else {
+          phone = buildPhoneNumber(row[m.phone], m.phone2 ? row[m.phone2] : "");
+          phoneMissing = !phone;
+        }
+
         return {
-          name: String(row[m.name] || "").trim(),
-          phone: phoneRaw,
+          name: name,
+          phone: phone,
+          phoneMissing: phoneMissing,
           type: m.type ? String(row[m.type] || "").trim() : "",
           product: m.product ? String(row[m.product] || "").trim() : "",
           date: dateValue,
         };
       })
       .filter(function (c) {
-        return c.date && c.date.getFullYear() === targetYear && c.date.getMonth() + 1 === targetMonth && c.phone;
+        return c.date && c.date.getFullYear() === targetYear && c.date.getMonth() + 1 === targetMonth;
       })
       .sort(function (a, b) { return a.date - b.date; });
 
-    el.filterResultHint.textContent = monthValue + " 만기예정 고객 " + state.filtered.length + "명이 검색되었습니다.";
+    var missingCount = state.filtered.filter(function (c) { return c.phoneMissing; }).length;
+    var hint = monthValue + " 만기예정 고객 " + state.filtered.length + "명이 검색되었습니다.";
+    if (missingCount) hint += " (연락처를 찾지 못한 고객 " + missingCount + "명 포함)";
+    el.filterResultHint.textContent = hint;
 
     el.stepTemplate.classList.remove("hidden");
     el.stepTemplate.scrollIntoView({ behavior: "smooth" });
@@ -366,8 +512,9 @@
 
       var nameLine = document.createElement("div");
       nameLine.className = "name-line";
+      var phoneText = customer.phoneMissing ? "연락처 없음" : formatPhoneDisplay(customer.phone);
       nameLine.innerHTML =
-        '<span>' + escapeHtml(customer.name) + ' <span class="phone">' + escapeHtml(formatPhoneDisplay(customer.phone)) + '</span></span>' +
+        '<span>' + escapeHtml(customer.name) + ' <span class="phone">' + escapeHtml(phoneText) + '</span></span>' +
         '<span class="status-badge" id="status-' + idx + '"></span>';
       item.appendChild(nameLine);
 
@@ -379,16 +526,24 @@
       var actions = document.createElement("div");
       actions.className = "actions";
 
-      var sendLink = document.createElement("a");
-      sendLink.className = "btn send small";
-      sendLink.textContent = "문자 보내기";
-      sendLink.href = buildSmsHref(customer.phone, message);
-      sendLink.addEventListener("click", function () {
-        var badge = document.getElementById("status-" + idx);
-        if (badge) badge.textContent = "발송 연결됨";
-        item.classList.add("done");
-      });
-      actions.appendChild(sendLink);
+      if (customer.phoneMissing) {
+        item.classList.add("missing-phone");
+        var warn = document.createElement("span");
+        warn.className = "status-badge missing";
+        warn.textContent = "연락처를 찾지 못했습니다 — 두 엑셀의 이름/매칭키를 확인해주세요";
+        actions.appendChild(warn);
+      } else {
+        var sendLink = document.createElement("a");
+        sendLink.className = "btn send small";
+        sendLink.textContent = "문자 보내기";
+        sendLink.href = buildSmsHref(customer.phone, message);
+        sendLink.addEventListener("click", function () {
+          var badge = document.getElementById("status-" + idx);
+          if (badge) badge.textContent = "발송 연결됨";
+          item.classList.add("done");
+        });
+        actions.appendChild(sendLink);
+      }
 
       item.appendChild(actions);
       el.customerList.appendChild(item);
