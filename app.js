@@ -1,0 +1,292 @@
+(function () {
+  "use strict";
+
+  var state = {
+    headers: [],
+    rows: [], // array of objects keyed by header
+    mapping: { name: "", phone: "", type: "", product: "", date: "" },
+    filtered: [], // normalized customer objects for the selected month
+  };
+
+  var FIELD_GUESSES = {
+    name: ["고객명", "성명", "이름"],
+    phone: ["연락처", "휴대폰", "휴대전화", "전화번호", "핸드폰", "hp", "phone", "mobile"],
+    date: ["만기예정일", "만기일", "재예치일", "만기", "maturity", "date"],
+    type: ["상품유형", "제도유형", "유형", "구분", "type"],
+    product: ["상품명", "펀드명", "product"],
+  };
+
+  var TEMPLATE_STORAGE_KEY = "dcirp_sms_template_v1";
+  var MAPPING_STORAGE_KEY = "dcirp_sms_mapping_v1";
+
+  var DEFAULT_TEMPLATE =
+    "[삼성생명] {이름} 고객님, 가입하신 {상품유형} {상품명} 상품이 {만기일} 만기 예정입니다. " +
+    "재예치/이전 관련 상담 원하시면 담당 RM에게 연락 부탁드립니다. 감사합니다.";
+
+  var el = {};
+  document.addEventListener("DOMContentLoaded", init);
+
+  function init() {
+    el.fileInput = document.getElementById("fileInput");
+    el.stepMapping = document.getElementById("step-mapping");
+    el.stepFilter = document.getElementById("step-filter");
+    el.stepTemplate = document.getElementById("step-template");
+    el.stepSend = document.getElementById("step-send");
+    el.mapName = document.getElementById("mapName");
+    el.mapPhone = document.getElementById("mapPhone");
+    el.mapType = document.getElementById("mapType");
+    el.mapProduct = document.getElementById("mapProduct");
+    el.mapDate = document.getElementById("mapDate");
+    el.applyMapping = document.getElementById("applyMapping");
+    el.targetMonth = document.getElementById("targetMonth");
+    el.applyFilter = document.getElementById("applyFilter");
+    el.filterResultHint = document.getElementById("filterResultHint");
+    el.templateInput = document.getElementById("templateInput");
+    el.applyTemplate = document.getElementById("applyTemplate");
+    el.customerList = document.getElementById("customerList");
+
+    el.templateInput.value = localStorage.getItem(TEMPLATE_STORAGE_KEY) || DEFAULT_TEMPLATE;
+
+    var now = new Date();
+    el.targetMonth.value = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
+
+    el.fileInput.addEventListener("change", handleFile);
+    el.applyMapping.addEventListener("click", handleApplyMapping);
+    el.applyFilter.addEventListener("click", handleApplyFilter);
+    el.applyTemplate.addEventListener("click", handleApplyTemplate);
+  }
+
+  function handleFile(evt) {
+    var file = evt.target.files[0];
+    if (!file) return;
+
+    var reader = new FileReader();
+    reader.onload = function (e) {
+      var data = new Uint8Array(e.target.result);
+      var workbook = XLSX.read(data, { type: "array", cellDates: true });
+      var firstSheetName = workbook.SheetNames[0];
+      var sheet = workbook.Sheets[firstSheetName];
+      var json = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+
+      if (!json.length) {
+        alert("엑셀에서 데이터를 찾을 수 없습니다. 첫 번째 시트에 표 형태 데이터가 있는지 확인해주세요.");
+        return;
+      }
+
+      state.headers = Object.keys(json[0]);
+      state.rows = json;
+      populateMappingSelects();
+      el.stepMapping.classList.remove("hidden");
+      el.stepMapping.scrollIntoView({ behavior: "smooth" });
+    };
+    reader.readAsArrayBuffer(file);
+  }
+
+  function populateMappingSelects() {
+    var savedMapping = {};
+    try {
+      savedMapping = JSON.parse(localStorage.getItem(MAPPING_STORAGE_KEY) || "{}");
+    } catch (e) {
+      savedMapping = {};
+    }
+
+    var selects = {
+      name: el.mapName,
+      phone: el.mapPhone,
+      type: el.mapType,
+      product: el.mapProduct,
+      date: el.mapDate,
+    };
+
+    var guesses = guessAllHeaders(state.headers);
+
+    Object.keys(selects).forEach(function (field) {
+      var select = selects[field];
+      select.innerHTML = "";
+      var blank = document.createElement("option");
+      blank.value = "";
+      blank.textContent = "(선택 안 함)";
+      select.appendChild(blank);
+
+      state.headers.forEach(function (h) {
+        var opt = document.createElement("option");
+        opt.value = h;
+        opt.textContent = h;
+        select.appendChild(opt);
+      });
+
+      var preset = savedMapping[field] && state.headers.indexOf(savedMapping[field]) !== -1
+        ? savedMapping[field]
+        : guesses[field];
+      if (preset) select.value = preset;
+    });
+  }
+
+  function guessAllHeaders(headers) {
+    var claimed = {};
+    var result = {};
+    Object.keys(FIELD_GUESSES).forEach(function (field) {
+      var keywords = FIELD_GUESSES[field];
+      var found = headers.find(function (h) {
+        if (claimed[h]) return false;
+        var lower = String(h).toLowerCase();
+        return keywords.some(function (k) { return lower.indexOf(k.toLowerCase()) !== -1; });
+      });
+      if (found) {
+        result[field] = found;
+        claimed[found] = true;
+      } else {
+        result[field] = "";
+      }
+    });
+    return result;
+  }
+
+  function handleApplyMapping() {
+    state.mapping = {
+      name: el.mapName.value,
+      phone: el.mapPhone.value,
+      type: el.mapType.value,
+      product: el.mapProduct.value,
+      date: el.mapDate.value,
+    };
+
+    if (!state.mapping.name || !state.mapping.phone || !state.mapping.date) {
+      alert("고객명, 휴대폰번호, 만기일 컬럼은 반드시 선택해주세요.");
+      return;
+    }
+
+    localStorage.setItem(MAPPING_STORAGE_KEY, JSON.stringify(state.mapping));
+
+    el.stepFilter.classList.remove("hidden");
+    el.stepFilter.scrollIntoView({ behavior: "smooth" });
+  }
+
+  function parseDate(value) {
+    if (value instanceof Date && !isNaN(value)) return value;
+    if (typeof value === "number") {
+      var parsed = XLSX.SSF.parse_date_code(value);
+      if (parsed) return new Date(parsed.y, parsed.m - 1, parsed.d);
+    }
+    if (typeof value === "string") {
+      var cleaned = value.trim().replace(/\./g, "-").replace(/\//g, "-");
+      var match = cleaned.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+      if (match) {
+        return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+      }
+      var d = new Date(cleaned);
+      if (!isNaN(d)) return d;
+    }
+    return null;
+  }
+
+  function formatDate(d) {
+    if (!d) return "";
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  }
+
+  function handleApplyFilter() {
+    var monthValue = el.targetMonth.value;
+    if (!monthValue) {
+      alert("대상 월을 선택해주세요.");
+      return;
+    }
+    var parts = monthValue.split("-");
+    var targetYear = Number(parts[0]);
+    var targetMonth = Number(parts[1]);
+
+    var m = state.mapping;
+    state.filtered = state.rows
+      .map(function (row) {
+        var dateValue = parseDate(row[m.date]);
+        return {
+          name: String(row[m.name] || "").trim(),
+          phone: String(row[m.phone] || "").trim(),
+          type: m.type ? String(row[m.type] || "").trim() : "",
+          product: m.product ? String(row[m.product] || "").trim() : "",
+          date: dateValue,
+        };
+      })
+      .filter(function (c) {
+        return c.date && c.date.getFullYear() === targetYear && c.date.getMonth() + 1 === targetMonth && c.phone;
+      })
+      .sort(function (a, b) { return a.date - b.date; });
+
+    el.filterResultHint.textContent = monthValue + " 만기예정 고객 " + state.filtered.length + "명을 찾았습니다.";
+
+    el.stepTemplate.classList.remove("hidden");
+    el.stepTemplate.scrollIntoView({ behavior: "smooth" });
+  }
+
+  function renderTemplate(template, customer) {
+    return template
+      .replace(/\{이름\}/g, customer.name)
+      .replace(/\{상품유형\}/g, customer.type)
+      .replace(/\{상품명\}/g, customer.product)
+      .replace(/\{만기일\}/g, formatDate(customer.date));
+  }
+
+  function buildSmsHref(phone, message) {
+    var digits = phone.replace(/[^0-9+]/g, "");
+    var isiOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
+    var separator = isiOS ? "&" : "?";
+    return "sms:" + digits + separator + "body=" + encodeURIComponent(message);
+  }
+
+  function handleApplyTemplate() {
+    var template = el.templateInput.value;
+    localStorage.setItem(TEMPLATE_STORAGE_KEY, template);
+
+    if (!state.filtered.length) {
+      el.customerList.innerHTML = '<p class="empty-msg">이번 필터 조건에 해당하는 고객이 없습니다.</p>';
+      el.stepSend.classList.remove("hidden");
+      el.stepSend.scrollIntoView({ behavior: "smooth" });
+      return;
+    }
+
+    el.customerList.innerHTML = "";
+    state.filtered.forEach(function (customer, idx) {
+      var message = renderTemplate(template, customer);
+      var item = document.createElement("div");
+      item.className = "customer-item";
+      item.id = "customer-" + idx;
+
+      var nameLine = document.createElement("div");
+      nameLine.className = "name-line";
+      nameLine.innerHTML =
+        '<span>' + escapeHtml(customer.name) + ' <span class="phone">' + escapeHtml(customer.phone) + '</span></span>' +
+        '<span class="status-badge" id="status-' + idx + '"></span>';
+      item.appendChild(nameLine);
+
+      var preview = document.createElement("div");
+      preview.className = "message-preview";
+      preview.textContent = message;
+      item.appendChild(preview);
+
+      var actions = document.createElement("div");
+      actions.className = "actions";
+
+      var sendLink = document.createElement("a");
+      sendLink.className = "btn send small";
+      sendLink.textContent = "문자 보내기";
+      sendLink.href = buildSmsHref(customer.phone, message);
+      sendLink.addEventListener("click", function () {
+        document.getElementById("status-" + idx).textContent = "발송 화면 열림";
+        item.classList.add("done");
+      });
+      actions.appendChild(sendLink);
+
+      item.appendChild(actions);
+      el.customerList.appendChild(item);
+    });
+
+    el.stepSend.classList.remove("hidden");
+    el.stepSend.scrollIntoView({ behavior: "smooth" });
+  }
+
+  function escapeHtml(str) {
+    var div = document.createElement("div");
+    div.textContent = str;
+    return div.innerHTML;
+  }
+})();

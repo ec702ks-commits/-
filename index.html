@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>DC·IRP 만기예정 안내 문자</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<header>
+  <h1>DC·IRP 만기예정 안내 문자</h1>
+  <p class="sub">엑셀 업로드 → 이번 달 만기예정자 필터 → 문자 앱으로 바로 발송</p>
+</header>
+
+<main>
+
+  <section id="step-upload" class="card">
+    <h2>1. 고객 명단 엑셀 업로드</h2>
+    <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" />
+    <p class="hint">업로드한 파일은 이 화면(브라우저) 안에서만 처리되며, 어디로도 전송되지 않습니다.</p>
+  </section>
+
+  <section id="step-mapping" class="card hidden">
+    <h2>2. 컬럼 매핑</h2>
+    <p class="hint">엑셀의 각 항목이 어떤 컬럼인지 선택해 주세요.</p>
+    <div class="mapping-grid">
+      <label>고객명 <select id="mapName"></select></label>
+      <label>휴대폰번호 <select id="mapPhone"></select></label>
+      <label>상품유형(DC/IRP) <select id="mapType"></select></label>
+      <label>상품명 <select id="mapProduct"></select></label>
+      <label>만기일 <select id="mapDate"></select></label>
+    </div>
+    <button id="applyMapping" class="btn primary">다음</button>
+  </section>
+
+  <section id="step-filter" class="card hidden">
+    <h2>3. 만기예정 기간 선택</h2>
+    <div class="filter-row">
+      <label>대상 월 <input type="month" id="targetMonth" /></label>
+      <button id="applyFilter" class="btn primary">필터링</button>
+    </div>
+    <p class="hint" id="filterResultHint"></p>
+  </section>
+
+  <section id="step-template" class="card hidden">
+    <h2>4. 문자 문구</h2>
+    <p class="hint">사용 가능한 자리표시자: {이름} {상품유형} {상품명} {만기일}</p>
+    <textarea id="templateInput" rows="5"></textarea>
+    <button id="applyTemplate" class="btn primary">미리보기 생성</button>
+  </section>
+
+  <section id="step-send" class="card hidden">
+    <h2>5. 발송 대상</h2>
+    <p class="hint">각 항목의 "문자 보내기"를 누르면 휴대폰 기본 문자 앱이 번호와 문구를 채운 채 열립니다. 그 화면에서 보내기를 눌러야 실제 발송됩니다 (통신사 문자 요금제 사용, 별도 비용/API 없음).</p>
+    <div id="customerList"></div>
+  </section>
+
+</main>
+
+<footer>
+  <p>모든 데이터는 이 기기 안에서만 처리됩니다. 서버로 전송되거나 저장되지 않습니다.</p>
+</footer>
+
+<script src="vendor/xlsx.full.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
