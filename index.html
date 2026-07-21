@@ -20,9 +20,21 @@
     <div id="contactsDbInfo" class="upload-block hidden">
       <p class="upload-label">저장된 연락처 DB</p>
       <p class="hint" id="contactsDbStatus"></p>
-      <div class="actions" style="justify-content: flex-start; margin-top: 8px;">
+      <div class="actions" style="justify-content: flex-start; margin-top: 8px; flex-wrap: wrap;">
         <button id="useStoredContacts" type="button" class="btn primary small">이 DB 사용</button>
+        <button id="manageContactsDb" type="button" class="btn small">DB 보기/수정</button>
         <button id="clearContactsDb" type="button" class="btn small danger">DB 삭제</button>
+      </div>
+
+      <div id="contactsDbManager" class="hidden db-manager">
+        <input type="text" id="contactsDbSearch" placeholder="이름으로 검색" />
+        <div id="contactsDbList" class="db-list"></div>
+        <div class="db-add-row">
+          <input type="text" id="newContactName" placeholder="이름" />
+          <input type="text" id="newContactAux" placeholder="보조 키(선택)" />
+          <input type="text" id="newContactPhone" placeholder="연락처" />
+          <button id="addContactEntry" type="button" class="btn primary small">추가</button>
+        </div>
       </div>
     </div>
 

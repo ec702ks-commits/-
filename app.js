@@ -40,6 +40,14 @@
     el.contactsDbStatus = document.getElementById("contactsDbStatus");
     el.useStoredContactsBtn = document.getElementById("useStoredContacts");
     el.clearContactsDbBtn = document.getElementById("clearContactsDb");
+    el.manageContactsDbBtn = document.getElementById("manageContactsDb");
+    el.contactsDbManager = document.getElementById("contactsDbManager");
+    el.contactsDbSearch = document.getElementById("contactsDbSearch");
+    el.contactsDbList = document.getElementById("contactsDbList");
+    el.newContactName = document.getElementById("newContactName");
+    el.newContactAux = document.getElementById("newContactAux");
+    el.newContactPhone = document.getElementById("newContactPhone");
+    el.addContactEntryBtn = document.getElementById("addContactEntry");
 
     el.stepMapping = document.getElementById("step-mapping");
     el.stepFilter = document.getElementById("step-filter");
@@ -94,10 +102,116 @@
       clearContactsDb();
       state.storedContactsDb = null;
       state.useStoredContacts = false;
+      el.contactsDbManager.classList.add("hidden");
       refreshContactsDbUI();
     });
 
+    el.manageContactsDbBtn.addEventListener("click", function () {
+      el.contactsDbManager.classList.toggle("hidden");
+      if (!el.contactsDbManager.classList.contains("hidden")) {
+        el.contactsDbSearch.value = "";
+        renderContactsDbList("");
+      }
+    });
+
+    el.contactsDbSearch.addEventListener("input", function () {
+      renderContactsDbList(el.contactsDbSearch.value);
+    });
+
+    el.addContactEntryBtn.addEventListener("click", function () {
+      var name = el.newContactName.value.trim();
+      var phone = buildPhoneNumber(el.newContactPhone.value, "");
+      if (!name || !phone) {
+        alert("이름과 연락처를 입력해주세요.");
+        return;
+      }
+      var db = state.storedContactsDb || { updatedAt: new Date().toISOString(), count: 0, map: {} };
+      var key = buildMatchKey(name, el.newContactAux.value);
+      db.map[key] = phone;
+      state.storedContactsDb = saveContactsDb(db.map);
+      el.newContactName.value = "";
+      el.newContactAux.value = "";
+      el.newContactPhone.value = "";
+      refreshContactsDbUI();
+      el.contactsDbManager.classList.remove("hidden");
+      renderContactsDbList(el.contactsDbSearch.value);
+    });
+
     refreshContactsDbUI();
+  }
+
+  function renderContactsDbList(query) {
+    var db = state.storedContactsDb;
+    el.contactsDbList.innerHTML = "";
+    if (!db) return;
+
+    var q = query.trim();
+    if (!q) {
+      el.contactsDbList.innerHTML = '<p class="hint">이름을 검색하면 목록이 나타납니다. (전체 ' + db.count + '건)</p>';
+      return;
+    }
+
+    var keys = Object.keys(db.map).filter(function (key) {
+      return key.split("|")[0].indexOf(q) !== -1;
+    });
+
+    if (!keys.length) {
+      el.contactsDbList.innerHTML = '<p class="hint">일치하는 연락처가 없습니다.</p>';
+      return;
+    }
+
+    keys.slice(0, 50).forEach(function (key) {
+      var parts = key.split("|");
+      var name = parts[0];
+      var aux = parts[1] || "";
+
+      var row = document.createElement("div");
+      row.className = "db-row";
+
+      var label = document.createElement("span");
+      label.className = "db-row-name";
+      label.textContent = name + (aux ? " (" + aux + ")" : "");
+      row.appendChild(label);
+
+      var phoneInput = document.createElement("input");
+      phoneInput.type = "text";
+      phoneInput.className = "db-row-phone";
+      phoneInput.value = formatPhoneDisplay(db.map[key]);
+      phoneInput.addEventListener("change", function () {
+        var newPhone = buildPhoneNumber(phoneInput.value, "");
+        if (!newPhone) {
+          alert("올바른 연락처를 입력해주세요.");
+          phoneInput.value = formatPhoneDisplay(db.map[key]);
+          return;
+        }
+        db.map[key] = newPhone;
+        state.storedContactsDb = saveContactsDb(db.map);
+        refreshContactsDbUI();
+      });
+      row.appendChild(phoneInput);
+
+      var delBtn = document.createElement("button");
+      delBtn.type = "button";
+      delBtn.className = "btn small danger";
+      delBtn.textContent = "삭제";
+      delBtn.addEventListener("click", function () {
+        delete db.map[key];
+        state.storedContactsDb = saveContactsDb(db.map);
+        refreshContactsDbUI();
+        el.contactsDbManager.classList.remove("hidden");
+        renderContactsDbList(el.contactsDbSearch.value);
+      });
+      row.appendChild(delBtn);
+
+      el.contactsDbList.appendChild(row);
+    });
+
+    if (keys.length > 50) {
+      var more = document.createElement("p");
+      more.className = "hint";
+      more.textContent = (keys.length - 50) + "건 더 있습니다. 검색어를 더 구체적으로 입력해주세요.";
+      el.contactsDbList.appendChild(more);
+    }
   }
 
   function loadContactsDb() {

@@ -99,6 +99,7 @@ main {
 }
 
 input[type="month"],
+input[type="text"],
 select,
 textarea {
   width: 100%;
@@ -294,4 +295,51 @@ footer {
   font-size: 0.9rem;
   text-align: center;
   padding: 20px 0;
+}
+
+.db-manager {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.db-list {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.db-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.db-row-name {
+  flex: 1;
+  font-size: 0.88rem;
+  word-break: break-all;
+}
+
+.db-row-phone {
+  width: 140px;
+  flex-shrink: 0;
+}
+
+.db-add-row {
+  margin-top: 12px;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.db-add-row input {
+  flex: 1;
+  min-width: 90px;
 }
