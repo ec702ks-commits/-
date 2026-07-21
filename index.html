@@ -16,6 +16,16 @@
 
   <section id="step-upload" class="card">
     <h2>1. 엑셀 업로드</h2>
+
+    <div id="contactsDbInfo" class="upload-block hidden">
+      <p class="upload-label">저장된 연락처 DB</p>
+      <p class="hint" id="contactsDbStatus"></p>
+      <div class="actions" style="justify-content: flex-start; margin-top: 8px;">
+        <button id="useStoredContacts" type="button" class="btn primary small">이 DB 사용</button>
+        <button id="clearContactsDb" type="button" class="btn small danger">DB 삭제</button>
+      </div>
+    </div>
+
     <p class="hint">만기상품 엑셀은 필수입니다. 연락처가 그 파일에 없고 별도 파일에 있다면, 연락처 엑셀도 함께 올려주세요.</p>
 
     <div class="upload-block">
@@ -30,10 +40,11 @@
       <input type="file" id="fileInputContacts" accept=".xlsx,.xls,.csv" class="visually-hidden" multiple />
       <label for="fileInputContacts" class="btn primary file-label">연락처 엑셀 선택 (여러 개 가능)</label>
       <p class="hint" id="fileNameDisplayContacts"></p>
+      <p class="hint">여기서 올린 연락처는 매핑을 마치면 이 기기에 저장되어, 다음부터는 "이 DB 사용"만 누르면 됩니다.</p>
     </div>
 
     <button id="proceedToMapping" class="btn primary" disabled>다음</button>
-    <p class="hint">업로드한 파일은 이 화면(브라우저) 안에서만 처리되며, 어디로도 전송되지 않습니다.</p>
+    <p class="hint">업로드한 파일은 이 화면(브라우저) 안에서만 처리되며, 어디로도 전송되지 않습니다. 저장된 연락처 DB는 이 기기의 브라우저 저장소에만 남습니다.</p>
   </section>
 
   <section id="step-mapping" class="card hidden">

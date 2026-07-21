@@ -203,6 +203,16 @@ textarea {
   font-size: 0.88rem;
 }
 
+.btn.danger {
+  background: #fff;
+  color: var(--danger);
+  border: 1px solid var(--danger);
+}
+
+.btn.danger:active {
+  background: #fdf1f0;
+}
+
 #customerList {
   display: flex;
   flex-direction: column;

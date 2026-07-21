@@ -6,6 +6,8 @@
     contactsFiles: [], // array of { sheetName, headers, rows }, one per uploaded 단체 연락처 파일
     mapping: {},
     filtered: [],
+    storedContactsDb: null, // { updatedAt, count, map } loaded from localStorage
+    useStoredContacts: false,
   };
 
   var FIELD_GUESSES = {
@@ -19,6 +21,7 @@
   var TEMPLATE_STORAGE_KEY = "dcirp_sms_template_v1";
   var MAPPING_STORAGE_KEY_PRODUCTS = "dcirp_sms_mapping_products_v1";
   var MAPPING_STORAGE_KEY_CONTACTS = "dcirp_sms_mapping_contacts_v1";
+  var CONTACTS_DB_KEY = "dcirp_contacts_db_v1";
 
   var DEFAULT_TEMPLATE =
     "[삼성생명] {이름} 고객님, 가입하신 {상품유형} {상품명} 상품이 {만기일} 만기 예정입니다. " +
@@ -33,6 +36,10 @@
     el.fileInputContacts = document.getElementById("fileInputContacts");
     el.fileNameDisplayContacts = document.getElementById("fileNameDisplayContacts");
     el.proceedToMapping = document.getElementById("proceedToMapping");
+    el.contactsDbInfo = document.getElementById("contactsDbInfo");
+    el.contactsDbStatus = document.getElementById("contactsDbStatus");
+    el.useStoredContactsBtn = document.getElementById("useStoredContacts");
+    el.clearContactsDbBtn = document.getElementById("clearContactsDb");
 
     el.stepMapping = document.getElementById("step-mapping");
     el.stepFilter = document.getElementById("step-filter");
@@ -74,6 +81,53 @@
     el.applyMapping.addEventListener("click", handleApplyMapping);
     el.applyFilter.addEventListener("click", handleApplyFilter);
     el.applyTemplate.addEventListener("click", handleApplyTemplate);
+
+    el.useStoredContactsBtn.addEventListener("click", function () {
+      state.useStoredContacts = true;
+      state.contactsFiles = [];
+      el.fileNameDisplayContacts.textContent = "저장된 연락처 DB를 사용합니다 (새로 올리면 취소됩니다).";
+      updateProceedButton();
+    });
+
+    el.clearContactsDbBtn.addEventListener("click", function () {
+      if (!confirm("저장된 연락처 DB를 삭제할까요? 이 동작은 되돌릴 수 없습니다.")) return;
+      clearContactsDb();
+      state.storedContactsDb = null;
+      state.useStoredContacts = false;
+      refreshContactsDbUI();
+    });
+
+    refreshContactsDbUI();
+  }
+
+  function loadContactsDb() {
+    try {
+      var raw = localStorage.getItem(CONTACTS_DB_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function saveContactsDb(map) {
+    var db = { updatedAt: new Date().toISOString(), count: Object.keys(map).length, map: map };
+    localStorage.setItem(CONTACTS_DB_KEY, JSON.stringify(db));
+    return db;
+  }
+
+  function clearContactsDb() {
+    localStorage.removeItem(CONTACTS_DB_KEY);
+  }
+
+  function refreshContactsDbUI() {
+    var db = loadContactsDb();
+    state.storedContactsDb = db;
+    if (!db) {
+      el.contactsDbInfo.classList.add("hidden");
+      return;
+    }
+    el.contactsDbInfo.classList.remove("hidden");
+    el.contactsDbStatus.textContent = db.count + "명 저장됨 (최근 저장: " + formatDate(new Date(db.updatedAt)) + ")";
   }
 
   function parseWorkbookFile(file, onSuccess, onError) {
@@ -115,6 +169,7 @@
     var files = Array.prototype.slice.call(evt.target.files || []);
     if (!files.length) return;
 
+    state.useStoredContacts = false;
     state.contactsFiles = [];
     var loadedCount = 0;
     var failedNames = [];
@@ -283,7 +338,7 @@
       fillSelectOptions(fields[field], headers, rows, preset);
     });
 
-    if (state.contactsFiles.length) {
+    if (state.contactsFiles.length || state.useStoredContacts) {
       el.mappingProductsPhone.classList.add("hidden");
     } else {
       el.mappingProductsPhone.classList.remove("hidden");
@@ -355,6 +410,14 @@
         phone: mapping.contactsPhone,
         phone2: mapping.contactsPhone2,
       }));
+
+      state.mapping = mapping;
+      var freshLookup = buildContactsLookup();
+      state.storedContactsDb = saveContactsDb(freshLookup);
+      state.useStoredContacts = true;
+      refreshContactsDbUI();
+    } else if (state.useStoredContacts) {
+      state.mapping = mapping;
     } else {
       mapping.phone = el.mapPhone.value;
       mapping.phone2 = el.mapPhone2.value;
@@ -363,6 +426,7 @@
         alert("휴대폰번호 컬럼은 필수 선택 사항입니다.");
         return;
       }
+      state.mapping = mapping;
     }
 
     localStorage.setItem(MAPPING_STORAGE_KEY_PRODUCTS, JSON.stringify({
@@ -374,8 +438,6 @@
       phone: mapping.phone,
       phone2: mapping.phone2,
     }));
-
-    state.mapping = mapping;
 
     el.stepFilter.classList.remove("hidden");
     el.stepFilter.scrollIntoView({ behavior: "smooth" });
@@ -468,7 +530,7 @@
     var targetMonth = Number(parts[1]);
 
     var m = state.mapping;
-    var contactsLookup = state.contactsFiles.length ? buildContactsLookup() : null;
+    var contactsLookup = (state.useStoredContacts && state.storedContactsDb) ? state.storedContactsDb.map : null;
 
     state.filtered = state.products.rows
       .map(function (row) {
