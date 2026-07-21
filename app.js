@@ -3,7 +3,7 @@
 
   var state = {
     products: null, // { sheetName, headers, rows }
-    contacts: null, // { sheetName, headers, rows } or null if not uploaded
+    contactsFiles: [], // array of { sheetName, headers, rows }, one per uploaded 단체 연락처 파일
     mapping: {},
     filtered: [],
   };
@@ -76,7 +76,7 @@
     el.applyTemplate.addEventListener("click", handleApplyTemplate);
   }
 
-  function parseWorkbookFile(file, onSuccess) {
+  function parseWorkbookFile(file, onSuccess, onError) {
     var reader = new FileReader();
     reader.onload = function (e) {
       try {
@@ -85,17 +85,17 @@
         var extracted = extractRows(workbook);
 
         if (!extracted || !extracted.rows.length) {
-          alert(
-            "엑셀에서 표 데이터를 찾을 수 없습니다.\n" +
-            "확인한 시트: " + workbook.SheetNames.join(", ") + "\n" +
-            "고객명 등 컬럼이 있는 표 형태 데이터가 있는지 확인해주세요."
-          );
+          var notFoundMsg = "표 데이터를 찾을 수 없습니다 (시트: " + workbook.SheetNames.join(", ") + ")";
+          if (onError) onError(notFoundMsg);
+          else alert("엑셀에서 " + notFoundMsg + "\n고객명 등 컬럼이 있는 표 형태 데이터가 있는지 확인해주세요.");
           return;
         }
 
         onSuccess(extracted);
       } catch (err) {
-        alert("엑셀 파일을 읽는 중 오류가 발생했습니다. 파일 형식을 확인해 주세요.");
+        var errMsg = "파일을 읽는 중 오류가 발생했습니다.";
+        if (onError) onError(errMsg);
+        else alert("엑셀 " + errMsg + " 파일 형식을 확인해 주세요.");
       }
     };
     reader.readAsArrayBuffer(file);
@@ -112,12 +112,41 @@
   }
 
   function handleContactsFile(evt) {
-    var file = evt.target.files[0];
-    if (!file) return;
-    el.fileNameDisplayContacts.textContent = "선택된 파일: " + file.name;
-    parseWorkbookFile(file, function (extracted) {
-      state.contacts = extracted;
+    var files = Array.prototype.slice.call(evt.target.files || []);
+    if (!files.length) return;
+
+    state.contactsFiles = [];
+    var loadedCount = 0;
+    var failedNames = [];
+
+    function refreshDisplay() {
+      if (loadedCount < files.length) {
+        el.fileNameDisplayContacts.textContent = "불러오는 중... (" + loadedCount + "/" + files.length + ")";
+        return;
+      }
+      var successCount = files.length - failedNames.length;
+      var text = "연락처 파일 " + successCount + "개 불러옴";
+      if (failedNames.length) text += " (실패: " + failedNames.join(", ") + ")";
+      el.fileNameDisplayContacts.textContent = text;
       updateProceedButton();
+    }
+
+    refreshDisplay();
+
+    files.forEach(function (file) {
+      parseWorkbookFile(
+        file,
+        function (extracted) {
+          state.contactsFiles.push(extracted);
+          loadedCount++;
+          refreshDisplay();
+        },
+        function () {
+          failedNames.push(file.name);
+          loadedCount++;
+          refreshDisplay();
+        }
+      );
     });
   }
 
@@ -254,7 +283,7 @@
       fillSelectOptions(fields[field], headers, rows, preset);
     });
 
-    if (state.contacts) {
+    if (state.contactsFiles.length) {
       el.mappingProductsPhone.classList.add("hidden");
     } else {
       el.mappingProductsPhone.classList.remove("hidden");
@@ -267,16 +296,17 @@
   }
 
   function populateContactsMapping() {
-    if (!state.contacts) {
+    if (!state.contactsFiles.length) {
       el.mappingContacts.classList.add("hidden");
       return;
     }
     el.mappingContacts.classList.remove("hidden");
 
     var saved = loadSavedMapping(MAPPING_STORAGE_KEY_CONTACTS);
-    var guesses = guessAllHeaders(state.contacts.headers);
-    var headers = state.contacts.headers;
-    var rows = state.contacts.rows;
+    var primary = state.contactsFiles[0];
+    var guesses = guessAllHeaders(primary.headers);
+    var headers = primary.headers;
+    var rows = primary.rows;
 
     var fields = { name: el.mapNameContacts, auxKey: el.mapAuxContacts, phone: el.mapPhoneContacts, phone2: el.mapPhone2Contacts };
     Object.keys(fields).forEach(function (field) {
@@ -308,7 +338,7 @@
       return;
     }
 
-    if (state.contacts) {
+    if (state.contactsFiles.length) {
       mapping.contactsName = el.mapNameContacts.value;
       mapping.contactsAuxKey = el.mapAuxContacts.value;
       mapping.contactsPhone = el.mapPhoneContacts.value;
@@ -415,13 +445,14 @@
 
   function buildContactsLookup() {
     var map = {};
-    if (!state.contacts) return map;
     var cm = state.mapping;
-    state.contacts.rows.forEach(function (row) {
-      var key = buildMatchKey(row[cm.contactsName], cm.contactsAuxKey ? row[cm.contactsAuxKey] : "");
-      if (!key) return;
-      var phone = buildPhoneNumber(row[cm.contactsPhone], cm.contactsPhone2 ? row[cm.contactsPhone2] : "");
-      if (phone) map[key] = phone;
+    state.contactsFiles.forEach(function (file) {
+      file.rows.forEach(function (row) {
+        var key = buildMatchKey(row[cm.contactsName], cm.contactsAuxKey ? row[cm.contactsAuxKey] : "");
+        if (!key) return;
+        var phone = buildPhoneNumber(row[cm.contactsPhone], cm.contactsPhone2 ? row[cm.contactsPhone2] : "");
+        if (phone) map[key] = phone;
+      });
     });
     return map;
   }
@@ -437,7 +468,7 @@
     var targetMonth = Number(parts[1]);
 
     var m = state.mapping;
-    var contactsLookup = state.contacts ? buildContactsLookup() : null;
+    var contactsLookup = state.contactsFiles.length ? buildContactsLookup() : null;
 
     state.filtered = state.products.rows
       .map(function (row) {
