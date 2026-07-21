@@ -4,7 +4,7 @@
   var state = {
     headers: [],
     rows: [], // array of objects keyed by header
-    mapping: { name: "", phone: "", type: "", product: "", date: "" },
+    mapping: { name: "", phone: "", phone2: "", type: "", product: "", date: "" },
     filtered: [], // normalized customer objects for the selected month
   };
 
@@ -34,6 +34,7 @@
     el.stepSend = document.getElementById("step-send");
     el.mapName = document.getElementById("mapName");
     el.mapPhone = document.getElementById("mapPhone");
+    el.mapPhone2 = document.getElementById("mapPhone2");
     el.mapType = document.getElementById("mapType");
     el.mapProduct = document.getElementById("mapProduct");
     el.mapDate = document.getElementById("mapDate");
@@ -170,6 +171,7 @@
     var selects = {
       name: el.mapName,
       phone: el.mapPhone,
+      phone2: el.mapPhone2,
       type: el.mapType,
       product: el.mapProduct,
       date: el.mapDate,
@@ -224,6 +226,7 @@
     state.mapping = {
       name: el.mapName.value,
       phone: el.mapPhone.value,
+      phone2: el.mapPhone2.value,
       type: el.mapType.value,
       product: el.mapProduct.value,
       date: el.mapDate.value,
@@ -271,6 +274,26 @@
     return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
   }
 
+  function buildPhoneNumber(primary, secondary) {
+    var p = String(primary || "").trim();
+    var s = String(secondary || "").trim();
+    if (!p && !s) return "";
+
+    var digits = (p + (s ? "-" + s : "")).replace(/[^0-9]/g, "");
+    if (digits.length === 8) {
+      digits = "010" + digits;
+    } else if ((digits.length === 9 || digits.length === 10) && digits.charAt(0) !== "0") {
+      digits = "0" + digits;
+    }
+    return digits;
+  }
+
+  function formatPhoneDisplay(digits) {
+    if (digits.length === 11) return digits.slice(0, 3) + "-" + digits.slice(3, 7) + "-" + digits.slice(7);
+    if (digits.length === 10) return digits.slice(0, 3) + "-" + digits.slice(3, 6) + "-" + digits.slice(6);
+    return digits;
+  }
+
   function handleApplyFilter() {
     var monthValue = el.targetMonth.value;
     if (!monthValue) {
@@ -285,7 +308,7 @@
     state.filtered = state.rows
       .map(function (row) {
         var dateValue = parseDate(row[m.date]);
-        var phoneRaw = String(row[m.phone] || "").trim();
+        var phoneRaw = buildPhoneNumber(row[m.phone], m.phone2 ? row[m.phone2] : "");
         return {
           name: String(row[m.name] || "").trim(),
           phone: phoneRaw,
@@ -341,7 +364,7 @@
       var nameLine = document.createElement("div");
       nameLine.className = "name-line";
       nameLine.innerHTML =
-        '<span>' + escapeHtml(customer.name) + ' <span class="phone">' + escapeHtml(customer.phone) + '</span></span>' +
+        '<span>' + escapeHtml(customer.name) + ' <span class="phone">' + escapeHtml(formatPhoneDisplay(customer.phone)) + '</span></span>' +
         '<span class="status-badge" id="status-' + idx + '"></span>';
       item.appendChild(nameLine);
 
