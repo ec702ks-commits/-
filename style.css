@@ -21,18 +21,21 @@ body {
 }
 
 header {
-  padding: 20px 16px 12px;
+  padding: 24px 16px 12px;
+  text-align: center;
 }
 
 header h1 {
-  font-size: 1.3rem;
-  margin: 0 0 4px;
+  font-size: 1.4rem;
+  margin: 0 0 6px;
+  word-break: keep-all;
 }
 
 header .sub {
   margin: 0;
   color: var(--text-muted);
-  font-size: 0.9rem;
+  font-size: 0.88rem;
+  word-break: keep-all;
 }
 
 main {
@@ -49,6 +52,7 @@ main {
   border: 1px solid var(--border);
   border-radius: 12px;
   padding: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
 .card h2 {
@@ -64,6 +68,7 @@ main {
   color: var(--text-muted);
   font-size: 0.85rem;
   margin: 6px 0 0;
+  line-height: 1.4;
 }
 
 input[type="file"],
@@ -71,10 +76,10 @@ input[type="month"],
 select,
 textarea {
   width: 100%;
-  padding: 10px;
+  padding: 10px 12px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  font-size: 1rem;
+  font-size: 0.95rem;
   background: #fff;
   color: var(--text);
 }
@@ -88,13 +93,14 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  margin-bottom: 12px;
 }
 
 .mapping-grid label {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  font-size: 0.9rem;
+  font-size: 0.88rem;
   color: var(--text-muted);
 }
 
@@ -109,23 +115,30 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  font-size: 0.9rem;
+  font-size: 0.88rem;
   color: var(--text-muted);
   flex: 1;
 }
 
 .btn {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: none;
   border-radius: 8px;
   padding: 10px 16px;
   font-size: 0.95rem;
+  font-weight: 500;
+  text-decoration: none;
   cursor: pointer;
+  transition: background-color 0.15s ease;
 }
 
 .btn.primary {
   background: var(--primary);
   color: #fff;
+  width: 100%;
+  margin-top: 8px;
 }
 
 .btn.primary:active {
@@ -137,26 +150,33 @@ textarea {
   color: #fff;
 }
 
+.btn.send:active {
+  background: #12632e;
+}
+
 .btn.small {
-  padding: 8px 12px;
-  font-size: 0.85rem;
+  padding: 8px 14px;
+  font-size: 0.88rem;
 }
 
 #customerList {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
+  margin-top: 12px;
 }
 
 .customer-item {
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 12px;
+  padding: 14px;
+  background: #fff;
+  transition: background 0.2s, border-color 0.2s;
 }
 
 .customer-item.done {
   border-color: var(--success);
-  background: #f1faf5;
+  background: #f0fdf4;
 }
 
 .customer-item .name-line {
@@ -164,29 +184,33 @@ textarea {
   justify-content: space-between;
   align-items: center;
   font-weight: 600;
-  margin-bottom: 6px;
+  margin-bottom: 8px;
 }
 
 .customer-item .phone {
   color: var(--text-muted);
   font-weight: 400;
   font-size: 0.85rem;
+  margin-left: 4px;
 }
 
 .customer-item .message-preview {
   white-space: pre-wrap;
-  font-size: 0.9rem;
+  font-size: 0.88rem;
   background: #f8f9fb;
+  border: 1px solid #edf0f5;
   border-radius: 6px;
-  padding: 8px;
-  margin-bottom: 8px;
+  padding: 10px;
+  margin-bottom: 10px;
+  line-height: 1.45;
+  word-break: break-all;
 }
 
 .customer-item .actions {
   display: flex;
   gap: 8px;
   align-items: center;
-  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .status-badge {
@@ -205,4 +229,6 @@ footer {
 .empty-msg {
   color: var(--text-muted);
   font-size: 0.9rem;
+  text-align: center;
+  padding: 20px 0;
 }

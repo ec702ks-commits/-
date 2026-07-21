@@ -62,22 +62,26 @@
 
     var reader = new FileReader();
     reader.onload = function (e) {
-      var data = new Uint8Array(e.target.result);
-      var workbook = XLSX.read(data, { type: "array", cellDates: true });
-      var firstSheetName = workbook.SheetNames[0];
-      var sheet = workbook.Sheets[firstSheetName];
-      var json = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+      try {
+        var data = new Uint8Array(e.target.result);
+        var workbook = XLSX.read(data, { type: "array", cellDates: true });
+        var firstSheetName = workbook.SheetNames[0];
+        var sheet = workbook.Sheets[firstSheetName];
+        var json = XLSX.utils.sheet_to_json(sheet, { defval: "" });
 
-      if (!json.length) {
-        alert("엑셀에서 데이터를 찾을 수 없습니다. 첫 번째 시트에 표 형태 데이터가 있는지 확인해주세요.");
-        return;
+        if (!json.length) {
+          alert("엑셀에서 데이터를 찾을 수 없습니다. 첫 번째 시트에 표 형태 데이터가 있는지 확인해주세요.");
+          return;
+        }
+
+        state.headers = Object.keys(json[0]);
+        state.rows = json;
+        populateMappingSelects();
+        el.stepMapping.classList.remove("hidden");
+        el.stepMapping.scrollIntoView({ behavior: "smooth" });
+      } catch (err) {
+        alert("엑셀 파일을 읽는 중 오류가 발생했습니다. 파일 형식을 확인해 주세요.");
       }
-
-      state.headers = Object.keys(json[0]);
-      state.rows = json;
-      populateMappingSelects();
-      el.stepMapping.classList.remove("hidden");
-      el.stepMapping.scrollIntoView({ behavior: "smooth" });
     };
     reader.readAsArrayBuffer(file);
   }
@@ -152,7 +156,7 @@
     };
 
     if (!state.mapping.name || !state.mapping.phone || !state.mapping.date) {
-      alert("고객명, 휴대폰번호, 만기일 컬럼은 반드시 선택해주세요.");
+      alert("고객명, 휴대폰번호, 만기일 컬럼은 필수 선택 사항입니다.");
       return;
     }
 
@@ -163,21 +167,29 @@
   }
 
   function parseDate(value) {
+    if (!value) return null;
     if (value instanceof Date && !isNaN(value)) return value;
     if (typeof value === "number") {
       var parsed = XLSX.SSF.parse_date_code(value);
       if (parsed) return new Date(parsed.y, parsed.m - 1, parsed.d);
     }
-    if (typeof value === "string") {
-      var cleaned = value.trim().replace(/\./g, "-").replace(/\//g, "-");
-      var match = cleaned.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
-      if (match) {
-        return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
-      }
-      var d = new Date(cleaned);
-      if (!isNaN(d)) return d;
+
+    var str = String(value).trim();
+    if (/^\d{8}$/.test(str)) {
+      var y = Number(str.substring(0, 4));
+      var m = Number(str.substring(4, 6)) - 1;
+      var d = Number(str.substring(6, 8));
+      return new Date(y, m, d);
     }
-    return null;
+
+    var cleaned = str.replace(/[.\/]/g, "-");
+    var match = cleaned.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    if (match) {
+      return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+    }
+
+    var parsedDate = new Date(cleaned);
+    return isNaN(parsedDate) ? null : parsedDate;
   }
 
   function formatDate(d) {
@@ -199,9 +211,10 @@
     state.filtered = state.rows
       .map(function (row) {
         var dateValue = parseDate(row[m.date]);
+        var phoneRaw = String(row[m.phone] || "").trim();
         return {
           name: String(row[m.name] || "").trim(),
-          phone: String(row[m.phone] || "").trim(),
+          phone: phoneRaw,
           type: m.type ? String(row[m.type] || "").trim() : "",
           product: m.product ? String(row[m.product] || "").trim() : "",
           date: dateValue,
@@ -212,7 +225,7 @@
       })
       .sort(function (a, b) { return a.date - b.date; });
 
-    el.filterResultHint.textContent = monthValue + " 만기예정 고객 " + state.filtered.length + "명을 찾았습니다.";
+    el.filterResultHint.textContent = monthValue + " 만기예정 고객 " + state.filtered.length + "명이 검색되었습니다.";
 
     el.stepTemplate.classList.remove("hidden");
     el.stepTemplate.scrollIntoView({ behavior: "smooth" });
@@ -227,7 +240,7 @@
   }
 
   function buildSmsHref(phone, message) {
-    var digits = phone.replace(/[^0-9+]/g, "");
+    var digits = phone.replace(/[^0-9]/g, "");
     var isiOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
     var separator = isiOS ? "&" : "?";
     return "sms:" + digits + separator + "body=" + encodeURIComponent(message);
@@ -238,7 +251,7 @@
     localStorage.setItem(TEMPLATE_STORAGE_KEY, template);
 
     if (!state.filtered.length) {
-      el.customerList.innerHTML = '<p class="empty-msg">이번 필터 조건에 해당하는 고객이 없습니다.</p>';
+      el.customerList.innerHTML = '<p class="empty-msg">선택한 조건에 해당하는 만기 예정 고객이 없습니다.</p>';
       el.stepSend.classList.remove("hidden");
       el.stepSend.scrollIntoView({ behavior: "smooth" });
       return;
@@ -271,7 +284,8 @@
       sendLink.textContent = "문자 보내기";
       sendLink.href = buildSmsHref(customer.phone, message);
       sendLink.addEventListener("click", function () {
-        document.getElementById("status-" + idx).textContent = "발송 화면 열림";
+        var badge = document.getElementById("status-" + idx);
+        if (badge) badge.textContent = "발송 연결됨";
         item.classList.add("done");
       });
       actions.appendChild(sendLink);
