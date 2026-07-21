@@ -102,10 +102,32 @@
       }).length;
       if (matches >= 2) return i;
     }
-    for (var j = 0; j < grid.length; j++) {
-      if (grid[j].some(function (cell) { return String(cell).trim() !== ""; })) return j;
-    }
     return -1;
+  }
+
+  function looksLikeDataRow(row) {
+    return row.some(function (cell) {
+      if (cell instanceof Date) return true;
+      var s = String(cell).trim();
+      if (!s) return false;
+      if (/^01[0-9][-\s]?\d{3,4}[-\s]?\d{4}$/.test(s)) return true;
+      if (/^\d{4}[-.\/]\d{1,2}[-.\/]\d{1,2}$/.test(s)) return true;
+      if (/^\d{6,}$/.test(s)) return true;
+      return false;
+    });
+  }
+
+  function toRowObjects(headers, dataRows) {
+    return dataRows
+      .filter(function (r) { return r.some(function (cell) { return String(cell).trim() !== ""; }); })
+      .map(function (r) {
+        var obj = {};
+        headers.forEach(function (h, idx) {
+          if (!h) return;
+          obj[h] = r[idx] !== undefined ? r[idx] : "";
+        });
+        return obj;
+      });
   }
 
   function extractRows(workbook) {
@@ -114,21 +136,21 @@
       var grid = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, defval: "", blankrows: false });
       if (!grid.length) continue;
 
+      var headers, rows;
       var headerRowIndex = findHeaderRowIndex(grid);
-      if (headerRowIndex === -1) continue;
 
-      var headers = grid[headerRowIndex].map(function (h) { return String(h).trim(); });
-      var rows = grid
-        .slice(headerRowIndex + 1)
-        .filter(function (r) { return r.some(function (cell) { return String(cell).trim() !== ""; }); })
-        .map(function (r) {
-          var obj = {};
-          headers.forEach(function (h, idx) {
-            if (!h) return;
-            obj[h] = r[idx] !== undefined ? r[idx] : "";
-          });
-          return obj;
-        });
+      if (headerRowIndex !== -1) {
+        headers = grid[headerRowIndex].map(function (h) { return String(h).trim(); });
+        rows = toRowObjects(headers, grid.slice(headerRowIndex + 1));
+      } else if (!looksLikeDataRow(grid[0])) {
+        headers = grid[0].map(function (h) { return String(h).trim(); });
+        rows = toRowObjects(headers, grid.slice(1));
+      } else {
+        var colCount = grid.reduce(function (max, r) { return Math.max(max, r.length); }, 0);
+        headers = [];
+        for (var c = 0; c < colCount; c++) headers.push("컬럼" + (c + 1));
+        rows = toRowObjects(headers, grid);
+      }
 
       if (rows.length) {
         return { sheetName: sheetName, headers: headers.filter(Boolean), rows: rows };
@@ -166,7 +188,8 @@
       state.headers.forEach(function (h) {
         var opt = document.createElement("option");
         opt.value = h;
-        opt.textContent = h;
+        var sample = state.rows[0] ? String(state.rows[0][h] || "").trim() : "";
+        opt.textContent = /^컬럼\d+$/.test(h) && sample ? h + " (예: " + sample + ")" : h;
         select.appendChild(opt);
       });
 
