@@ -65,17 +65,19 @@
       try {
         var data = new Uint8Array(e.target.result);
         var workbook = XLSX.read(data, { type: "array", cellDates: true });
-        var firstSheetName = workbook.SheetNames[0];
-        var sheet = workbook.Sheets[firstSheetName];
-        var json = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+        var extracted = extractRows(workbook);
 
-        if (!json.length) {
-          alert("엑셀에서 데이터를 찾을 수 없습니다. 첫 번째 시트에 표 형태 데이터가 있는지 확인해주세요.");
+        if (!extracted || !extracted.rows.length) {
+          alert(
+            "엑셀에서 표 데이터를 찾을 수 없습니다.\n" +
+            "확인한 시트: " + workbook.SheetNames.join(", ") + "\n" +
+            "고객명/연락처 등 컬럼이 있는 표 형태 데이터가 있는지 확인해주세요."
+          );
           return;
         }
 
-        state.headers = Object.keys(json[0]);
-        state.rows = json;
+        state.headers = extracted.headers;
+        state.rows = extracted.rows;
         populateMappingSelects();
         el.stepMapping.classList.remove("hidden");
         el.stepMapping.scrollIntoView({ behavior: "smooth" });
@@ -84,6 +86,55 @@
       }
     };
     reader.readAsArrayBuffer(file);
+  }
+
+  var ALL_FIELD_KEYWORDS = Object.keys(FIELD_GUESSES).reduce(function (acc, field) {
+    return acc.concat(FIELD_GUESSES[field]);
+  }, []);
+
+  function findHeaderRowIndex(grid) {
+    var limit = Math.min(grid.length, 15);
+    for (var i = 0; i < limit; i++) {
+      var matches = grid[i].filter(function (cell) {
+        var text = String(cell).trim().toLowerCase();
+        if (!text) return false;
+        return ALL_FIELD_KEYWORDS.some(function (k) { return text.indexOf(k.toLowerCase()) !== -1; });
+      }).length;
+      if (matches >= 2) return i;
+    }
+    for (var j = 0; j < grid.length; j++) {
+      if (grid[j].some(function (cell) { return String(cell).trim() !== ""; })) return j;
+    }
+    return -1;
+  }
+
+  function extractRows(workbook) {
+    for (var s = 0; s < workbook.SheetNames.length; s++) {
+      var sheetName = workbook.SheetNames[s];
+      var grid = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, defval: "", blankrows: false });
+      if (!grid.length) continue;
+
+      var headerRowIndex = findHeaderRowIndex(grid);
+      if (headerRowIndex === -1) continue;
+
+      var headers = grid[headerRowIndex].map(function (h) { return String(h).trim(); });
+      var rows = grid
+        .slice(headerRowIndex + 1)
+        .filter(function (r) { return r.some(function (cell) { return String(cell).trim() !== ""; }); })
+        .map(function (r) {
+          var obj = {};
+          headers.forEach(function (h, idx) {
+            if (!h) return;
+            obj[h] = r[idx] !== undefined ? r[idx] : "";
+          });
+          return obj;
+        });
+
+      if (rows.length) {
+        return { sheetName: sheetName, headers: headers.filter(Boolean), rows: rows };
+      }
+    }
+    return null;
   }
 
   function populateMappingSelects() {
