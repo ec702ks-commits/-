@@ -71,7 +71,6 @@ main {
   line-height: 1.4;
 }
 
-input[type="file"],
 input[type="month"],
 select,
 textarea {
@@ -88,6 +87,19 @@ textarea {
   resize: vertical;
   font-family: inherit;
 }
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 
 .mapping-grid {
   display: flex;

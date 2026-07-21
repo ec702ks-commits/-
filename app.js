@@ -28,6 +28,7 @@
 
   function init() {
     el.fileInput = document.getElementById("fileInput");
+    el.fileNameDisplay = document.getElementById("fileNameDisplay");
     el.stepMapping = document.getElementById("step-mapping");
     el.stepFilter = document.getElementById("step-filter");
     el.stepTemplate = document.getElementById("step-template");
@@ -60,6 +61,8 @@
   function handleFile(evt) {
     var file = evt.target.files[0];
     if (!file) return;
+
+    el.fileNameDisplay.textContent = "선택된 파일: " + file.name;
 
     var reader = new FileReader();
     reader.onload = function (e) {

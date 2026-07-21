@@ -16,7 +16,9 @@
 
   <section id="step-upload" class="card">
     <h2>1. 고객 명단 엑셀 업로드</h2>
-    <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" />
+    <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" class="visually-hidden" />
+    <label for="fileInput" class="btn primary file-label">엑셀 파일 선택</label>
+    <p class="hint" id="fileNameDisplay"></p>
     <p class="hint">업로드한 파일은 이 화면(브라우저) 안에서만 처리되며, 어디로도 전송되지 않습니다.</p>
   </section>
 
