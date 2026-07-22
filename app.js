@@ -26,6 +26,24 @@
     balance: ["적립금", "적립금액", "잔액", "평가금액"],
   };
 
+  // 고정 양식 헤더명 — 저장된 매핑이 없어도 이 이름이 있으면 정확 매칭으로 우선 사용
+  var PRODUCTS_EXACT_DEFAULTS = {
+    name: "가입자명",
+    auxKey: "가입자번호",
+    orgName: "계약자명",
+    type: "제도구분",
+    product: "상품명",
+    date: "만기예정일",
+    balance: "적립금",
+  };
+
+  var CONTACTS_EXACT_DEFAULTS = {
+    name: "가입자",
+    auxKey: "가입자번호",
+    phone: "휴대전화국번호",
+    phone2: "휴대전화개별번호",
+  };
+
   var TEMPLATE_STORAGE_KEY = "dcirp_sms_template_v1";
   var MAPPING_STORAGE_KEY_PRODUCTS = "dcirp_sms_mapping_products_v1";
   var MAPPING_STORAGE_KEY_CONTACTS = "dcirp_sms_mapping_contacts_v1";
@@ -640,7 +658,7 @@
 
     var fields = { name: el.mapName, auxKey: el.mapAuxProducts, orgName: el.mapOrgProducts, type: el.mapType, product: el.mapProduct, date: el.mapDate, balance: el.mapBalanceProducts };
     Object.keys(fields).forEach(function (field) {
-      var preset = (saved[field] && headers.indexOf(saved[field]) !== -1) ? saved[field] : (guesses[field] || "");
+      var preset = resolvePreset(saved, PRODUCTS_EXACT_DEFAULTS, guesses, headers, field);
       fillSelectOptions(fields[field], headers, rows, preset);
     });
 
@@ -650,10 +668,16 @@
       el.mappingProductsPhone.classList.remove("hidden");
       var phoneFields = { phone: el.mapPhone, phone2: el.mapPhone2 };
       Object.keys(phoneFields).forEach(function (field) {
-        var preset = (saved[field] && headers.indexOf(saved[field]) !== -1) ? saved[field] : (guesses[field] || "");
+        var preset = resolvePreset(saved, PRODUCTS_EXACT_DEFAULTS, guesses, headers, field);
         fillSelectOptions(phoneFields[field], headers, rows, preset);
       });
     }
+  }
+
+  function resolvePreset(saved, exactDefaults, guesses, headers, field) {
+    if (saved[field] && headers.indexOf(saved[field]) !== -1) return saved[field];
+    if (exactDefaults[field] && headers.indexOf(exactDefaults[field]) !== -1) return exactDefaults[field];
+    return guesses[field] || "";
   }
 
   function populateContactsMapping() {
@@ -671,7 +695,7 @@
 
     var fields = { name: el.mapNameContacts, auxKey: el.mapAuxContacts, phone: el.mapPhoneContacts, phone2: el.mapPhone2Contacts };
     Object.keys(fields).forEach(function (field) {
-      var preset = (saved[field] && headers.indexOf(saved[field]) !== -1) ? saved[field] : (guesses[field] || "");
+      var preset = resolvePreset(saved, CONTACTS_EXACT_DEFAULTS, guesses, headers, field);
       fillSelectOptions(fields[field], headers, rows, preset);
     });
   }
