@@ -15,7 +15,7 @@
 <main>
 
   <section class="card no-print" id="customerInfo">
-    <h2>1. 고객/기존상품 정보</h2>
+    <h2><span class="step-badge">1</span>고객/기존상품 정보</h2>
     <div class="mapping-grid">
       <label>고객명(또는 단체명) — 선택
         <input type="text" id="customerName" placeholder="예: 홍길동 고객님 / OO주식회사" />
@@ -24,11 +24,11 @@
         <input type="number" id="principal" min="0" step="1" placeholder="예: 100000000" />
       </label>
       <div class="two-col">
-        <label>가입일
-          <input type="date" id="startDate" />
+        <label>명세일자
+          <input type="text" id="startDate" />
         </label>
         <label>만기일
-          <input type="date" id="maturityDate" />
+          <input type="text" id="maturityDate" />
         </label>
       </div>
       <div class="two-col">
@@ -36,7 +36,7 @@
           <input type="number" id="contractRate" min="0" step="0.01" placeholder="예: 3.5" />
         </label>
         <label>해지(오늘) 기준일
-          <input type="date" id="todayDate" />
+          <input type="text" id="todayDate" />
         </label>
       </div>
     </div>
@@ -44,7 +44,7 @@
   </section>
 
   <section class="card no-print" id="holdOption">
-    <h2>2. 만기까지 유지할 경우</h2>
+    <h2><span class="step-badge">2</span>만기까지 유지할 경우</h2>
     <div class="mapping-grid">
       <label>만기 시 예상 수령액(원)
         <input type="number" id="holdAmount" min="0" step="1" placeholder="시스템 조회값 또는 아래 참고값 사용" />
@@ -56,7 +56,7 @@
   </section>
 
   <section class="card no-print" id="penaltySection">
-    <h2>3. 중도해지 패널티</h2>
+    <h2><span class="step-badge">3</span>중도해지 패널티</h2>
     <p class="hint">당사 상품처럼 해지패널티/해지적립금을 정확히 알 수 있으면 "직접입력", 타사 신탁상품처럼 "중도해지 시 적용이율이 약정금리의 80%" 식으로만 아는 경우 "적용이율 비율"을 사용하세요.</p>
 
     <div class="radio-row">
@@ -84,14 +84,14 @@
   </section>
 
   <section class="card no-print" id="newProductsSection">
-    <h2>4. 신상품 재예치 제안금리</h2>
+    <h2><span class="step-badge">4</span>신상품 재예치 제안금리</h2>
     <p class="hint">기간/금리는 시기·거래처마다 다르므로 매번 직접 입력하세요. 필요 없는 기간은 삭제, 필요하면 추가할 수 있습니다.</p>
     <div id="newProductRows"></div>
     <button type="button" id="addProductRow" class="btn small">+ 기간 추가</button>
   </section>
 
   <section class="card no-print" id="rmInfoSection">
-    <h2>5. 작성자 정보 (선택, 문서 하단에 표시)</h2>
+    <h2><span class="step-badge">5</span>작성자 정보 (선택, 문서 하단에 표시)</h2>
     <div class="mapping-grid">
       <label>이름 <input type="text" id="rmName" placeholder="예: 구태형" /></label>
       <div class="two-col">
