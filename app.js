@@ -17,31 +17,32 @@
   };
 
   var FIELD_GUESSES = {
-    name: ["고객명", "성명", "이름"],
+    name: ["고객명", "성명", "이름", "가입자"],
     phone: ["연락처", "휴대폰", "휴대전화", "전화번호", "핸드폰", "hp", "phone", "mobile"],
     date: ["만기예정일", "만기일", "재예치일", "만기", "maturity", "date"],
     type: ["상품유형", "제도유형", "유형", "구분", "type"],
     product: ["상품명", "펀드명", "product"],
-    orgName: ["단체명", "단체", "거래처명", "거래처", "소속"],
+    orgName: ["단체명", "단체", "거래처명", "거래처", "소속", "계약자"],
     balance: ["적립금", "적립금액", "잔액", "평가금액"],
   };
 
   // 고정 양식 헤더명 — 저장된 매핑이 없어도 이 이름이 있으면 정확 매칭으로 우선 사용
+  // (여러 후보를 배열로 두면 순서대로 확인해서 처음 맞는 것을 사용)
   var PRODUCTS_EXACT_DEFAULTS = {
-    name: "가입자명",
-    auxKey: "가입자번호",
-    orgName: "계약자명",
-    type: "제도구분",
-    product: "상품명",
-    date: "만기예정일",
-    balance: "적립금",
+    name: ["가입자명", "가입자", "가입자성명"],
+    auxKey: ["가입자번호"],
+    orgName: ["계약자명", "계약자"],
+    type: ["제도구분"],
+    product: ["상품명"],
+    date: ["만기예정일"],
+    balance: ["적립금"],
   };
 
   var CONTACTS_EXACT_DEFAULTS = {
-    name: "가입자",
-    auxKey: "가입자번호",
-    phone: "휴대전화국번호",
-    phone2: "휴대전화개별번호",
+    name: ["가입자", "가입자명", "가입자성명"],
+    auxKey: ["가입자번호"],
+    phone: ["휴대전화국번호"],
+    phone2: ["휴대전화개별번호"],
   };
 
   var TEMPLATE_STORAGE_KEY = "dcirp_sms_template_v1";
@@ -676,7 +677,15 @@
 
   function resolvePreset(saved, exactDefaults, guesses, headers, field) {
     if (saved[field] && headers.indexOf(saved[field]) !== -1) return saved[field];
-    if (exactDefaults[field] && headers.indexOf(exactDefaults[field]) !== -1) return exactDefaults[field];
+
+    var candidates = exactDefaults[field];
+    if (candidates) {
+      var list = Array.isArray(candidates) ? candidates : [candidates];
+      for (var i = 0; i < list.length; i++) {
+        if (headers.indexOf(list[i]) !== -1) return list[i];
+      }
+    }
+
     return guesses[field] || "";
   }
 
