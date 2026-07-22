@@ -23,6 +23,7 @@
     type: ["상품유형", "제도유형", "유형", "구분", "type"],
     product: ["상품명", "펀드명", "product"],
     orgName: ["단체명", "단체", "거래처명", "거래처", "소속"],
+    balance: ["적립금", "적립금액", "잔액", "평가금액"],
   };
 
   var TEMPLATE_STORAGE_KEY = "dcirp_sms_template_v1";
@@ -31,10 +32,19 @@
   var CONTACTS_DB_KEY = "dcirp_contacts_db_v1";
   var HISTORY_KEY = "dcirp_sms_history_v1";
   var HISTORY_MAX_ENTRIES = 5000;
+  var MONTHLY_RATE_KEY = "dcirp_sms_monthly_rate_v1";
+  var DEFAULT_OPTION_RATE_KEY = "dcirp_sms_default_option_rate_v1";
 
   var DEFAULT_TEMPLATE =
-    "[삼성생명] {이름} 고객님, 가입하신 아래 상품이 만기 예정입니다.\n{상품목록}\n" +
-    "재예치/이전 관련 상담 원하시면 담당 RM에게 연락 부탁드립니다. 감사합니다.";
+    "{이름} 고객님 안녕하십니까\n" +
+    "{단체명} 퇴직연금 담당하고 있는\n" +
+    "삼성생명 퇴직연금부 구태형 과장입니다.\n\n" +
+    "퇴직연금 만기예정건이 있어 안내드립니다.\n\n" +
+    "만기예정일 {만기일}일\n" +
+    "적립금 계    {적립금}원\n\n" +
+    "{해당월}월 이율보증형3년 상품으로 지시하시면 적용이율은 {해당월이율}%입니다.\n\n" +
+    "별도지시없이 기존 상품 만기 되셔도 디폴트 옵션 상품으로 운용 됩니다. (적용이율 {디폴트옵션이율}%)\n\n" +
+    "참고 부탁드리며 퇴직연금 관련 문의사항 있으시면 언제든지 연락 부탁드립니다! 감사합니다!";
 
   var el = {};
   document.addEventListener("DOMContentLoaded", init);
@@ -74,6 +84,7 @@
     el.mapType = document.getElementById("mapType");
     el.mapProduct = document.getElementById("mapProduct");
     el.mapDate = document.getElementById("mapDate");
+    el.mapBalanceProducts = document.getElementById("mapBalanceProducts");
     el.mapPhone = document.getElementById("mapPhone");
     el.mapPhone2 = document.getElementById("mapPhone2");
 
@@ -87,6 +98,8 @@
     el.applyFilter = document.getElementById("applyFilter");
     el.filterResultHint = document.getElementById("filterResultHint");
     el.templateInput = document.getElementById("templateInput");
+    el.monthlyRate = document.getElementById("monthlyRate");
+    el.defaultOptionRate = document.getElementById("defaultOptionRate");
     el.applyTemplate = document.getElementById("applyTemplate");
     el.customerList = document.getElementById("customerList");
     el.sendProgressText = document.getElementById("sendProgressText");
@@ -107,6 +120,8 @@
     el.clearHistoryBtn = document.getElementById("clearHistory");
 
     el.templateInput.value = localStorage.getItem(TEMPLATE_STORAGE_KEY) || DEFAULT_TEMPLATE;
+    el.monthlyRate.value = localStorage.getItem(MONTHLY_RATE_KEY) || "";
+    el.defaultOptionRate.value = localStorage.getItem(DEFAULT_OPTION_RATE_KEY) || "";
 
     var now = new Date();
     el.targetMonth.value = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
@@ -205,6 +220,10 @@
     });
 
     refreshContactsDbUI();
+
+    if (navigator.storage && navigator.storage.persist) {
+      navigator.storage.persist().catch(function () {});
+    }
   }
 
   function renderContactsDbList(query) {
@@ -569,7 +588,7 @@
     var headers = state.products.headers;
     var rows = state.products.rows;
 
-    var fields = { name: el.mapName, auxKey: el.mapAuxProducts, orgName: el.mapOrgProducts, type: el.mapType, product: el.mapProduct, date: el.mapDate };
+    var fields = { name: el.mapName, auxKey: el.mapAuxProducts, orgName: el.mapOrgProducts, type: el.mapType, product: el.mapProduct, date: el.mapDate, balance: el.mapBalanceProducts };
     Object.keys(fields).forEach(function (field) {
       var preset = (saved[field] && headers.indexOf(saved[field]) !== -1) ? saved[field] : (guesses[field] || "");
       fillSelectOptions(fields[field], headers, rows, preset);
@@ -622,6 +641,7 @@
       type: el.mapType.value,
       product: el.mapProduct.value,
       date: el.mapDate.value,
+      balance: el.mapBalanceProducts.value,
       phone: "",
       phone2: "",
     };
@@ -676,6 +696,7 @@
       type: mapping.type,
       product: mapping.product,
       date: mapping.date,
+      balance: mapping.balance,
       phone: mapping.phone,
       phone2: mapping.phone2,
     }));
@@ -800,6 +821,7 @@
           type: m.type ? String(row[m.type] || "").trim() : "",
           product: m.product ? String(row[m.product] || "").trim() : "",
           date: dateValue,
+          balance: m.balance ? row[m.balance] : "",
         };
       })
       .filter(function (e) {
@@ -822,7 +844,7 @@
         order.push(key);
       }
       var g = groups[key];
-      g.products.push({ type: e.type, product: e.product, date: e.date });
+      g.products.push({ type: e.type, product: e.product, date: e.date, balance: e.balance });
       if (e.date < g.date) g.date = e.date;
     });
 
@@ -850,14 +872,29 @@
     return products[0] ? formatProductLine(products[0]) : "";
   }
 
+  function formatBalance(value) {
+    if (value === undefined || value === null || value === "") return "";
+    var num = Number(String(value).replace(/[^0-9.-]/g, ""));
+    if (isNaN(num)) return String(value).trim();
+    return num.toLocaleString("ko-KR");
+  }
+
   function renderTemplate(template, customer) {
     var first = customer.products[0] || {};
+    var monthParts = (state.targetMonthValue || "").split("-");
+    var monthNumber = monthParts[1] ? String(Number(monthParts[1])) : "";
+
     return template
       .replace(/\{이름\}/g, customer.name)
+      .replace(/\{단체명\}/g, customer.orgName || "")
       .replace(/\{상품유형\}/g, first.type || "")
       .replace(/\{상품명\}/g, first.product || "")
       .replace(/\{만기일\}/g, formatDate(first.date))
-      .replace(/\{상품목록\}/g, buildProductList(customer.products));
+      .replace(/\{적립금\}/g, formatBalance(first.balance))
+      .replace(/\{상품목록\}/g, buildProductList(customer.products))
+      .replace(/\{해당월\}/g, monthNumber)
+      .replace(/\{해당월이율\}/g, el.monthlyRate.value.trim())
+      .replace(/\{디폴트옵션이율\}/g, el.defaultOptionRate.value.trim());
   }
 
   function buildSmsHref(phone, message) {
@@ -870,6 +907,8 @@
   function handleApplyTemplate() {
     var template = el.templateInput.value;
     localStorage.setItem(TEMPLATE_STORAGE_KEY, template);
+    localStorage.setItem(MONTHLY_RATE_KEY, el.monthlyRate.value.trim());
+    localStorage.setItem(DEFAULT_OPTION_RATE_KEY, el.defaultOptionRate.value.trim());
 
     if (!state.filtered.length) {
       el.customerList.innerHTML = '<p class="empty-msg">선택한 조건에 해당하는 만기 예정 고객이 없습니다.</p>';
