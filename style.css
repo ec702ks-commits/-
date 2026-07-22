@@ -100,6 +100,7 @@ main {
 
 input[type="month"],
 input[type="text"],
+input[type="password"],
 select,
 textarea {
   width: 100%;
@@ -109,6 +110,10 @@ textarea {
   font-size: 0.95rem;
   background: #fff;
   color: var(--text);
+}
+
+.upload-block input[type="password"] {
+  margin-top: 8px;
 }
 
 textarea {

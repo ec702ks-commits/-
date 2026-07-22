@@ -8,6 +8,11 @@
     filtered: [],
     storedContactsDb: null, // { updatedAt, count, map } loaded from localStorage
     useStoredContacts: false,
+    pendingProductsFile: null,
+    pendingContactsFiles: [],
+    lastProductsPasswordAttempt: null,
+    lastContactsPasswordAttempt: null,
+    contactsLoading: false,
   };
 
   var FIELD_GUESSES = {
@@ -33,8 +38,10 @@
   function init() {
     el.fileInputProducts = document.getElementById("fileInputProducts");
     el.fileNameDisplayProducts = document.getElementById("fileNameDisplayProducts");
+    el.productsPassword = document.getElementById("productsPassword");
     el.fileInputContacts = document.getElementById("fileInputContacts");
     el.fileNameDisplayContacts = document.getElementById("fileNameDisplayContacts");
+    el.contactsPassword = document.getElementById("contactsPassword");
     el.proceedToMapping = document.getElementById("proceedToMapping");
     el.contactsDbInfo = document.getElementById("contactsDbInfo");
     el.contactsDbStatus = document.getElementById("contactsDbStatus");
@@ -87,6 +94,21 @@
 
     el.fileInputProducts.addEventListener("change", handleProductsFile);
     el.fileInputContacts.addEventListener("change", handleContactsFile);
+
+    el.productsPassword.addEventListener("change", function () {
+      if (!state.pendingProductsFile) return;
+      if (el.productsPassword.value === state.lastProductsPasswordAttempt) return;
+      state.lastProductsPasswordAttempt = el.productsPassword.value;
+      loadProductsFile(state.pendingProductsFile, el.productsPassword.value);
+    });
+
+    el.contactsPassword.addEventListener("change", function () {
+      if (!state.pendingContactsFiles.length) return;
+      if (el.contactsPassword.value === state.lastContactsPasswordAttempt) return;
+      state.lastContactsPasswordAttempt = el.contactsPassword.value;
+      loadContactsFiles(state.pendingContactsFiles, el.contactsPassword.value);
+    });
+
     el.proceedToMapping.addEventListener("click", handleProceedToMapping);
     el.applyMapping.addEventListener("click", handleApplyMapping);
     el.applyFilter.addEventListener("click", handleApplyFilter);
@@ -247,12 +269,40 @@
     el.contactsDbStatus.textContent = db.count + "명 저장됨 (최근 저장: " + formatDate(new Date(db.updatedAt)) + ")";
   }
 
-  function parseWorkbookFile(file, onSuccess, onError) {
+  function parseWorkbookFile(file, password, onSuccess, onError) {
     var reader = new FileReader();
-    reader.onload = function (e) {
+    reader.onload = async function (e) {
       try {
         var data = new Uint8Array(e.target.result);
-        var workbook = XLSX.read(data, { type: "array", cellDates: true });
+        var workbook;
+
+        try {
+          workbook = XLSX.read(data, { type: "array", cellDates: true });
+        } catch (readErr) {
+          if (!/password/i.test(readErr.message || "")) throw readErr;
+
+          if (!password) {
+            var needPwMsg = "비밀번호로 보호된 파일입니다. 비밀번호를 입력한 뒤 다시 시도해주세요.";
+            if (onError) onError(needPwMsg);
+            else alert(needPwMsg);
+            return;
+          }
+
+          var decrypted;
+          try {
+            decrypted = await OfficeCrypto.decrypt(data, { password: password });
+          } catch (decErr) {
+            var wrongPwMsg = /incorrect/i.test(decErr.message || "")
+              ? "비밀번호가 틀렸습니다."
+              : "비밀번호 해제 중 오류가 발생했습니다.";
+            if (onError) onError(wrongPwMsg);
+            else alert(wrongPwMsg);
+            return;
+          }
+
+          workbook = XLSX.read(decrypted, { type: "buffer", cellDates: true });
+        }
+
         var extracted = extractRows(workbook);
 
         if (!extracted || !extracted.rows.length) {
@@ -275,11 +325,29 @@
   function handleProductsFile(evt) {
     var file = evt.target.files[0];
     if (!file) return;
-    el.fileNameDisplayProducts.textContent = "선택된 파일: " + file.name;
-    parseWorkbookFile(file, function (extracted) {
-      state.products = extracted;
-      updateProceedButton();
-    });
+    state.pendingProductsFile = file;
+    state.lastProductsPasswordAttempt = el.productsPassword.value;
+    loadProductsFile(file, el.productsPassword.value);
+  }
+
+  function loadProductsFile(file, password) {
+    el.fileNameDisplayProducts.textContent = "선택된 파일: " + file.name + " (불러오는 중...)";
+    state.products = null;
+    updateProceedButton();
+    parseWorkbookFile(
+      file,
+      password,
+      function (extracted) {
+        state.products = extracted;
+        el.fileNameDisplayProducts.textContent = "선택된 파일: " + file.name;
+        updateProceedButton();
+      },
+      function (msg) {
+        el.fileNameDisplayProducts.textContent = "선택된 파일: " + file.name + " — " + msg;
+        state.products = null;
+        updateProceedButton();
+      }
+    );
   }
 
   function handleContactsFile(evt) {
@@ -287,7 +355,14 @@
     if (!files.length) return;
 
     state.useStoredContacts = false;
+    state.pendingContactsFiles = files;
+    state.lastContactsPasswordAttempt = el.contactsPassword.value;
+    loadContactsFiles(files, el.contactsPassword.value);
+  }
+
+  function loadContactsFiles(files, password) {
     state.contactsFiles = [];
+    state.contactsLoading = true;
     var loadedCount = 0;
     var failedNames = [];
 
@@ -296,6 +371,7 @@
         el.fileNameDisplayContacts.textContent = "불러오는 중... (" + loadedCount + "/" + files.length + ")";
         return;
       }
+      state.contactsLoading = false;
       var successCount = files.length - failedNames.length;
       var text = "연락처 파일 " + successCount + "개 불러옴";
       if (failedNames.length) text += " (실패: " + failedNames.join(", ") + ")";
@@ -304,10 +380,12 @@
     }
 
     refreshDisplay();
+    updateProceedButton();
 
     files.forEach(function (file) {
       parseWorkbookFile(
         file,
+        password,
         function (extracted) {
           state.contactsFiles.push(extracted);
           loadedCount++;
@@ -323,7 +401,7 @@
   }
 
   function updateProceedButton() {
-    el.proceedToMapping.disabled = !state.products;
+    el.proceedToMapping.disabled = !state.products || !!state.contactsLoading;
   }
 
   var ALL_FIELD_KEYWORDS = Object.keys(FIELD_GUESSES).reduce(function (acc, field) {
@@ -530,7 +608,9 @@
 
       state.mapping = mapping;
       var freshLookup = buildContactsLookup();
-      state.storedContactsDb = saveContactsDb(freshLookup);
+      var existingMap = (state.storedContactsDb && state.storedContactsDb.map) || {};
+      var mergedMap = Object.assign({}, existingMap, freshLookup);
+      state.storedContactsDb = saveContactsDb(mergedMap);
       state.useStoredContacts = true;
       refreshContactsDbUI();
     } else if (state.useStoredContacts) {

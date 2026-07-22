@@ -22,6 +22,9 @@ OUT="dist/DC_IRP_만기안내문자.html"
   cat vendor/xlsx.full.min.js
   echo '</script>'
   echo '<script>'
+  cat vendor/officecrypto.min.js
+  echo '</script>'
+  echo '<script>'
   cat app.js
   echo '</script>'
   echo '</body>'
