@@ -368,3 +368,29 @@ footer {
 .customer-item.highlight {
   box-shadow: 0 0 0 3px rgba(26, 86, 219, 0.35);
 }
+
+.customer-item.hidden-by-filter {
+  display: none;
+}
+
+.send-filters {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 4px;
+}
+
+.send-filters input[type="text"] {
+  flex: 1;
+  min-width: 120px;
+}
+
+.send-filters select {
+  width: auto;
+  min-width: 110px;
+}
+
+.send-filters span {
+  display: contents;
+}
+

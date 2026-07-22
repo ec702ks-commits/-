@@ -69,6 +69,7 @@
       <div class="mapping-grid">
         <label>고객명 <select id="mapName"></select></label>
         <label>매칭 보조 키 (선택 — 동명이인이 있을 때, 예: 생년월일) <select id="mapAuxProducts"></select></label>
+        <label>단체명 (선택 — 있으면 발송 목록에서 단체별로 필터 가능) <select id="mapOrgProducts"></select></label>
         <label>상품유형(DC/IRP) <select id="mapType"></select></label>
         <label>상품명 <select id="mapProduct"></select></label>
         <label>만기일 <select id="mapDate"></select></label>
@@ -106,7 +107,7 @@
 
   <section id="step-template" class="card hidden">
     <h2>4. 문자 문구</h2>
-    <p class="hint">사용 가능한 자리표시자: {이름} {상품유형} {상품명} {만기일}</p>
+    <p class="hint">사용 가능한 자리표시자: {이름} {상품목록} (한 고객에게 만기 상품이 여러 개면 자동으로 목록으로 나열됩니다) — {상품유형} {상품명} {만기일}은 그중 첫 번째 상품 기준입니다.</p>
     <textarea id="templateInput" rows="5"></textarea>
     <button id="applyTemplate" class="btn primary">미리보기 생성</button>
   </section>
@@ -114,11 +115,41 @@
   <section id="step-send" class="card hidden">
     <h2>5. 발송 대상</h2>
     <p class="hint">각 항목의 "문자 보내기"를 누르면 휴대폰 기본 문자 앱이 번호와 문구를 채운 채 열립니다. 그 화면에서 보내기를 눌러야 실제 발송됩니다 (통신사 문자 요금제 사용, 별도 비용/API 없음).</p>
+
+    <div class="send-filters">
+      <input type="text" id="filterName" placeholder="이름 검색" />
+      <select id="filterStatus">
+        <option value="">전체 상태</option>
+        <option value="pending">미발송</option>
+        <option value="done">완료</option>
+        <option value="missing">연락처없음</option>
+      </select>
+      <span id="filterOrgWrap" class="hidden">
+        <select id="filterOrg"><option value="">전체 단체</option></select>
+      </span>
+      <span id="filterTypeWrap" class="hidden">
+        <select id="filterType"><option value="">전체 상품유형</option></select>
+      </span>
+    </div>
+
     <div class="send-progress-bar">
       <span id="sendProgressText"></span>
       <button id="scrollNextBtn" type="button" class="btn small">다음 미발송으로 이동</button>
     </div>
     <div id="customerList"></div>
+  </section>
+
+  <section id="step-history" class="card">
+    <h2>발송 이력</h2>
+    <button id="toggleHistory" type="button" class="btn small">이력 보기/숨기기</button>
+    <div id="historyPanel" class="hidden db-manager">
+      <div class="mapping-grid">
+        <label>월 <select id="historyMonthFilter"><option value="">전체</option></select></label>
+        <label>이름 검색 <input type="text" id="historyNameFilter" placeholder="이름" /></label>
+      </div>
+      <div id="historyList" class="db-list"></div>
+      <button id="clearHistory" type="button" class="btn small danger" style="margin-top: 10px;">이력 전체 삭제</button>
+    </div>
   </section>
 
 </main>

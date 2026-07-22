@@ -13,6 +13,7 @@
     lastProductsPasswordAttempt: null,
     lastContactsPasswordAttempt: null,
     contactsLoading: false,
+    targetMonthValue: "",
   };
 
   var FIELD_GUESSES = {
@@ -21,15 +22,18 @@
     date: ["만기예정일", "만기일", "재예치일", "만기", "maturity", "date"],
     type: ["상품유형", "제도유형", "유형", "구분", "type"],
     product: ["상품명", "펀드명", "product"],
+    orgName: ["단체명", "단체", "거래처명", "거래처", "소속"],
   };
 
   var TEMPLATE_STORAGE_KEY = "dcirp_sms_template_v1";
   var MAPPING_STORAGE_KEY_PRODUCTS = "dcirp_sms_mapping_products_v1";
   var MAPPING_STORAGE_KEY_CONTACTS = "dcirp_sms_mapping_contacts_v1";
   var CONTACTS_DB_KEY = "dcirp_contacts_db_v1";
+  var HISTORY_KEY = "dcirp_sms_history_v1";
+  var HISTORY_MAX_ENTRIES = 5000;
 
   var DEFAULT_TEMPLATE =
-    "[삼성생명] {이름} 고객님, 가입하신 {상품유형} {상품명} 상품이 {만기일} 만기 예정입니다. " +
+    "[삼성생명] {이름} 고객님, 가입하신 아래 상품이 만기 예정입니다.\n{상품목록}\n" +
     "재예치/이전 관련 상담 원하시면 담당 RM에게 연락 부탁드립니다. 감사합니다.";
 
   var el = {};
@@ -66,6 +70,7 @@
 
     el.mapName = document.getElementById("mapName");
     el.mapAuxProducts = document.getElementById("mapAuxProducts");
+    el.mapOrgProducts = document.getElementById("mapOrgProducts");
     el.mapType = document.getElementById("mapType");
     el.mapProduct = document.getElementById("mapProduct");
     el.mapDate = document.getElementById("mapDate");
@@ -86,6 +91,20 @@
     el.customerList = document.getElementById("customerList");
     el.sendProgressText = document.getElementById("sendProgressText");
     el.scrollNextBtn = document.getElementById("scrollNextBtn");
+
+    el.filterName = document.getElementById("filterName");
+    el.filterStatus = document.getElementById("filterStatus");
+    el.filterOrg = document.getElementById("filterOrg");
+    el.filterOrgWrap = document.getElementById("filterOrgWrap");
+    el.filterType = document.getElementById("filterType");
+    el.filterTypeWrap = document.getElementById("filterTypeWrap");
+
+    el.toggleHistoryBtn = document.getElementById("toggleHistory");
+    el.historyPanel = document.getElementById("historyPanel");
+    el.historyMonthFilter = document.getElementById("historyMonthFilter");
+    el.historyNameFilter = document.getElementById("historyNameFilter");
+    el.historyList = document.getElementById("historyList");
+    el.clearHistoryBtn = document.getElementById("clearHistory");
 
     el.templateInput.value = localStorage.getItem(TEMPLATE_STORAGE_KEY) || DEFAULT_TEMPLATE;
 
@@ -160,6 +179,29 @@
       refreshContactsDbUI();
       el.contactsDbManager.classList.remove("hidden");
       renderContactsDbList(el.contactsDbSearch.value);
+    });
+
+    el.filterName.addEventListener("input", applyListFilters);
+    el.filterStatus.addEventListener("change", applyListFilters);
+    el.filterOrg.addEventListener("change", applyListFilters);
+    el.filterType.addEventListener("change", applyListFilters);
+
+    el.toggleHistoryBtn.addEventListener("click", function () {
+      el.historyPanel.classList.toggle("hidden");
+      if (!el.historyPanel.classList.contains("hidden")) {
+        populateHistoryMonthOptions();
+        renderHistoryList();
+      }
+    });
+
+    el.historyMonthFilter.addEventListener("change", renderHistoryList);
+    el.historyNameFilter.addEventListener("input", renderHistoryList);
+
+    el.clearHistoryBtn.addEventListener("click", function () {
+      if (!confirm("발송 이력을 전체 삭제할까요? 이 동작은 되돌릴 수 없습니다.")) return;
+      localStorage.removeItem(HISTORY_KEY);
+      populateHistoryMonthOptions();
+      renderHistoryList();
     });
 
     refreshContactsDbUI();
@@ -527,7 +569,7 @@
     var headers = state.products.headers;
     var rows = state.products.rows;
 
-    var fields = { name: el.mapName, auxKey: el.mapAuxProducts, type: el.mapType, product: el.mapProduct, date: el.mapDate };
+    var fields = { name: el.mapName, auxKey: el.mapAuxProducts, orgName: el.mapOrgProducts, type: el.mapType, product: el.mapProduct, date: el.mapDate };
     Object.keys(fields).forEach(function (field) {
       var preset = (saved[field] && headers.indexOf(saved[field]) !== -1) ? saved[field] : (guesses[field] || "");
       fillSelectOptions(fields[field], headers, rows, preset);
@@ -576,6 +618,7 @@
     var mapping = {
       name: el.mapName.value,
       auxKey: el.mapAuxProducts.value,
+      orgName: el.mapOrgProducts.value,
       type: el.mapType.value,
       product: el.mapProduct.value,
       date: el.mapDate.value,
@@ -629,6 +672,7 @@
     localStorage.setItem(MAPPING_STORAGE_KEY_PRODUCTS, JSON.stringify({
       name: mapping.name,
       auxKey: mapping.auxKey,
+      orgName: mapping.orgName,
       type: mapping.type,
       product: mapping.product,
       date: mapping.date,
@@ -725,18 +769,21 @@
     var parts = monthValue.split("-");
     var targetYear = Number(parts[0]);
     var targetMonth = Number(parts[1]);
+    state.targetMonthValue = monthValue;
 
     var m = state.mapping;
     var contactsLookup = (state.useStoredContacts && state.storedContactsDb) ? state.storedContactsDb.map : null;
 
-    state.filtered = state.products.rows
+    var rawEntries = state.products.rows
       .map(function (row) {
         var dateValue = parseDate(row[m.date]);
         var name = String(row[m.name] || "").trim();
+        var auxRaw = m.auxKey ? row[m.auxKey] : "";
+        var orgName = m.orgName ? String(row[m.orgName] || "").trim() : "";
         var phone, phoneMissing;
 
         if (contactsLookup) {
-          var key = buildMatchKey(name, m.auxKey ? row[m.auxKey] : "");
+          var key = buildMatchKey(name, auxRaw);
           phone = contactsLookup[key] || "";
           phoneMissing = !phone;
         } else {
@@ -746,6 +793,8 @@
 
         return {
           name: name,
+          auxRaw: auxRaw,
+          orgName: orgName,
           phone: phone,
           phoneMissing: phoneMissing,
           type: m.type ? String(row[m.type] || "").trim() : "",
@@ -753,9 +802,32 @@
           date: dateValue,
         };
       })
-      .filter(function (c) {
-        return c.date && c.date.getFullYear() === targetYear && c.date.getMonth() + 1 === targetMonth;
-      })
+      .filter(function (e) {
+        return e.date && e.date.getFullYear() === targetYear && e.date.getMonth() + 1 === targetMonth;
+      });
+
+    var groups = {};
+    var order = [];
+    rawEntries.forEach(function (e) {
+      var key = buildMatchKey(e.name, e.auxRaw);
+      if (!groups[key]) {
+        groups[key] = {
+          name: e.name,
+          orgName: e.orgName,
+          phone: e.phone,
+          phoneMissing: e.phoneMissing,
+          products: [],
+          date: e.date,
+        };
+        order.push(key);
+      }
+      var g = groups[key];
+      g.products.push({ type: e.type, product: e.product, date: e.date });
+      if (e.date < g.date) g.date = e.date;
+    });
+
+    state.filtered = order
+      .map(function (key) { return groups[key]; })
       .sort(function (a, b) { return a.date - b.date; });
 
     var missingCount = state.filtered.filter(function (c) { return c.phoneMissing; }).length;
@@ -767,12 +839,25 @@
     el.stepTemplate.scrollIntoView({ behavior: "smooth" });
   }
 
+  function formatProductLine(p) {
+    return (p.type ? p.type + " " : "") + p.product + (p.date ? " (" + formatDate(p.date) + ")" : "");
+  }
+
+  function buildProductList(products) {
+    if (products.length > 1) {
+      return products.map(function (p) { return "- " + formatProductLine(p); }).join("\n");
+    }
+    return products[0] ? formatProductLine(products[0]) : "";
+  }
+
   function renderTemplate(template, customer) {
+    var first = customer.products[0] || {};
     return template
       .replace(/\{이름\}/g, customer.name)
-      .replace(/\{상품유형\}/g, customer.type)
-      .replace(/\{상품명\}/g, customer.product)
-      .replace(/\{만기일\}/g, formatDate(customer.date));
+      .replace(/\{상품유형\}/g, first.type || "")
+      .replace(/\{상품명\}/g, first.product || "")
+      .replace(/\{만기일\}/g, formatDate(first.date))
+      .replace(/\{상품목록\}/g, buildProductList(customer.products));
   }
 
   function buildSmsHref(phone, message) {
@@ -800,6 +885,9 @@
       var item = document.createElement("div");
       item.className = "customer-item";
       item.id = "customer-" + idx;
+      item.dataset.name = customer.name;
+      item.dataset.org = customer.orgName || "";
+      item.dataset.types = customer.products.map(function (p) { return p.type; }).filter(Boolean).join(",");
 
       var nameLine = document.createElement("div");
       nameLine.className = "name-line";
@@ -832,7 +920,9 @@
           var badge = document.getElementById("status-" + idx);
           if (badge) badge.textContent = "발송 연결됨";
           item.classList.add("done");
+          recordSendHistory(customer, message);
           updateSendProgress();
+          applyListFilters();
           setTimeout(scrollToNextPending, 400);
         });
         actions.appendChild(sendLink);
@@ -842,9 +932,62 @@
       el.customerList.appendChild(item);
     });
 
+    populateSendFilters();
+    applyListFilters();
     updateSendProgress();
     el.stepSend.classList.remove("hidden");
     el.stepSend.scrollIntoView({ behavior: "smooth" });
+  }
+
+  function populateSendFilters() {
+    var orgs = Array.from(new Set(state.filtered.map(function (c) { return c.orgName; }).filter(Boolean))).sort();
+    var types = Array.from(new Set(state.filtered.reduce(function (acc, c) {
+      c.products.forEach(function (p) { if (p.type) acc.push(p.type); });
+      return acc;
+    }, []))).sort();
+
+    fillSimpleOptions(el.filterOrg, orgs, "전체 단체");
+    el.filterOrgWrap.classList.toggle("hidden", orgs.length === 0);
+
+    fillSimpleOptions(el.filterType, types, "전체 상품유형");
+    el.filterTypeWrap.classList.toggle("hidden", types.length === 0);
+
+    el.filterName.value = "";
+    el.filterStatus.value = "";
+  }
+
+  function fillSimpleOptions(select, values, allLabel) {
+    var current = select.value;
+    select.innerHTML = "";
+    var allOpt = document.createElement("option");
+    allOpt.value = "";
+    allOpt.textContent = allLabel;
+    select.appendChild(allOpt);
+    values.forEach(function (v) {
+      var opt = document.createElement("option");
+      opt.value = v;
+      opt.textContent = v;
+      select.appendChild(opt);
+    });
+    if (values.indexOf(current) !== -1) select.value = current;
+  }
+
+  function applyListFilters() {
+    var nameQ = el.filterName.value.trim().toLowerCase();
+    var statusQ = el.filterStatus.value;
+    var orgQ = el.filterOrg.value;
+    var typeQ = el.filterType.value;
+
+    var items = el.customerList.querySelectorAll(".customer-item");
+    items.forEach(function (item) {
+      var matchesName = !nameQ || item.dataset.name.toLowerCase().indexOf(nameQ) !== -1;
+      var matchesOrg = !orgQ || item.dataset.org === orgQ;
+      var matchesType = !typeQ || (item.dataset.types || "").split(",").indexOf(typeQ) !== -1;
+      var status = item.classList.contains("missing-phone") ? "missing" : (item.classList.contains("done") ? "done" : "pending");
+      var matchesStatus = !statusQ || status === statusQ;
+
+      item.classList.toggle("hidden-by-filter", !(matchesName && matchesOrg && matchesType && matchesStatus));
+    });
   }
 
   function updateSendProgress() {
@@ -861,7 +1004,7 @@
     var items = el.customerList.querySelectorAll(".customer-item");
     for (var i = 0; i < items.length; i++) {
       var item = items[i];
-      if (item.classList.contains("done") || item.classList.contains("missing-phone")) continue;
+      if (item.classList.contains("done") || item.classList.contains("missing-phone") || item.classList.contains("hidden-by-filter")) continue;
       item.scrollIntoView({ behavior: "smooth", block: "center" });
       item.classList.add("highlight");
       (function (target) {
@@ -875,5 +1018,86 @@
     var div = document.createElement("div");
     div.textContent = str;
     return div.innerHTML;
+  }
+
+  function loadHistory() {
+    try {
+      return JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]");
+    } catch (e) {
+      return [];
+    }
+  }
+
+  function recordSendHistory(customer, message) {
+    var history = loadHistory();
+    history.push({
+      ts: new Date().toISOString(),
+      month: state.targetMonthValue,
+      name: customer.name,
+      phone: customer.phone,
+      products: customer.products.map(formatProductLine).join(", "),
+      message: message,
+    });
+    if (history.length > HISTORY_MAX_ENTRIES) {
+      history = history.slice(history.length - HISTORY_MAX_ENTRIES);
+    }
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+  }
+
+  function populateHistoryMonthOptions() {
+    var history = loadHistory();
+    var months = Array.from(new Set(history.map(function (h) { return h.month; }).filter(Boolean))).sort().reverse();
+    var current = el.historyMonthFilter.value;
+    el.historyMonthFilter.innerHTML = "";
+    var allOpt = document.createElement("option");
+    allOpt.value = "";
+    allOpt.textContent = "전체";
+    el.historyMonthFilter.appendChild(allOpt);
+    months.forEach(function (mo) {
+      var opt = document.createElement("option");
+      opt.value = mo;
+      opt.textContent = mo;
+      el.historyMonthFilter.appendChild(opt);
+    });
+    if (months.indexOf(current) !== -1) el.historyMonthFilter.value = current;
+  }
+
+  function renderHistoryList() {
+    var history = loadHistory();
+    var monthQ = el.historyMonthFilter.value;
+    var nameQ = el.historyNameFilter.value.trim().toLowerCase();
+
+    var filtered = history
+      .filter(function (h) { return !monthQ || h.month === monthQ; })
+      .filter(function (h) { return !nameQ || h.name.toLowerCase().indexOf(nameQ) !== -1; })
+      .sort(function (a, b) { return new Date(b.ts) - new Date(a.ts); });
+
+    el.historyList.innerHTML = "";
+
+    if (!filtered.length) {
+      el.historyList.innerHTML = '<p class="hint">발송 이력이 없습니다.</p>';
+      return;
+    }
+
+    filtered.slice(0, 100).forEach(function (h) {
+      var row = document.createElement("div");
+      row.className = "db-row";
+
+      var label = document.createElement("span");
+      label.className = "db-row-name";
+      var d = new Date(h.ts);
+      var timeStr = formatDate(d) + " " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+      label.textContent = timeStr + " — " + h.name + " (" + formatPhoneDisplay(h.phone) + ") — " + h.products;
+      row.appendChild(label);
+
+      el.historyList.appendChild(row);
+    });
+
+    if (filtered.length > 100) {
+      var more = document.createElement("p");
+      more.className = "hint";
+      more.textContent = (filtered.length - 100) + "건 더 있습니다. 월/이름으로 좁혀보세요.";
+      el.historyList.appendChild(more);
+    }
   }
 })();
