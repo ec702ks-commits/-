@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>중도해지 패널티 시뮬레이션</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<header class="no-print">
+  <h1>중도해지 패널티 시뮬레이션</h1>
+  <p class="sub">기존상품 만기유지 vs 중도해지 후 재예치, 유불리를 비교해서 고객에게 제안하세요</p>
+</header>
+
+<main>
+
+  <section class="card no-print" id="customerInfo">
+    <h2>1. 고객/기존상품 정보</h2>
+    <div class="mapping-grid">
+      <label>고객명(또는 단체명) — 선택
+        <input type="text" id="customerName" placeholder="예: 홍길동 고객님 / OO주식회사" />
+      </label>
+      <label>가입원금(원)
+        <input type="number" id="principal" min="0" step="1" placeholder="예: 100000000" />
+      </label>
+      <div class="two-col">
+        <label>가입일
+          <input type="date" id="startDate" />
+        </label>
+        <label>만기일
+          <input type="date" id="maturityDate" />
+        </label>
+      </div>
+      <div class="two-col">
+        <label>약정금리(연 %)
+          <input type="number" id="contractRate" min="0" step="0.01" placeholder="예: 3.5" />
+        </label>
+        <label>해지(오늘) 기준일
+          <input type="date" id="todayDate" />
+        </label>
+      </div>
+    </div>
+    <p class="hint" id="periodSummary"></p>
+  </section>
+
+  <section class="card no-print" id="holdOption">
+    <h2>2. 만기까지 유지할 경우</h2>
+    <div class="mapping-grid">
+      <label>만기 시 예상 수령액(원)
+        <input type="number" id="holdAmount" min="0" step="1" placeholder="시스템 조회값 또는 아래 참고값 사용" />
+      </label>
+    </div>
+    <p class="hint">참고(단리 추정): <span id="holdAmountSuggestion">-</span>
+      <button type="button" id="useHoldSuggestion" class="btn small">이 값 채우기</button>
+    </p>
+  </section>
+
+  <section class="card no-print" id="penaltySection">
+    <h2>3. 중도해지 패널티</h2>
+    <p class="hint">당사 상품처럼 해지패널티/해지적립금을 정확히 알 수 있으면 "직접입력", 타사 신탁상품처럼 "중도해지 시 적용이율이 약정금리의 80%" 식으로만 아는 경우 "적용이율 비율"을 사용하세요.</p>
+
+    <div class="radio-row">
+      <label><input type="radio" name="penaltyMode" id="modeDirect" value="direct" checked /> 해지적립금 직접입력</label>
+      <label><input type="radio" name="penaltyMode" id="modeRatio" value="ratio" /> 적용이율 비율로 계산</label>
+    </div>
+
+    <div id="directModeFields" class="mapping-grid">
+      <label>해지적립금(패널티 차감 후, 재예치 가능 금액, 원)
+        <input type="number" id="directCancelAmount" min="0" step="1" />
+      </label>
+      <label>해지패널티 금액(원) — 선택, 참고용
+        <input type="number" id="directPenaltyAmount" min="0" step="1" />
+      </label>
+    </div>
+
+    <div id="ratioModeFields" class="mapping-grid hidden">
+      <label>중도해지 시 적용이율 비율(%, 약정금리 대비)
+        <input type="number" id="appliedRatePct" min="0" max="100" step="1" placeholder="예: 80" />
+      </label>
+      <p class="hint" id="ratioModeCalc"></p>
+    </div>
+
+    <p class="result-line">해지적립금(재예치 원금): <strong id="cancelAmountResult">-</strong></p>
+  </section>
+
+  <section class="card no-print" id="newProductsSection">
+    <h2>4. 신상품 재예치 제안금리</h2>
+    <p class="hint">기간/금리는 시기·거래처마다 다르므로 매번 직접 입력하세요. 필요 없는 기간은 삭제, 필요하면 추가할 수 있습니다.</p>
+    <div id="newProductRows"></div>
+    <button type="button" id="addProductRow" class="btn small">+ 기간 추가</button>
+  </section>
+
+  <section class="card no-print" id="rmInfoSection">
+    <h2>5. 작성자 정보 (선택, 문서 하단에 표시)</h2>
+    <div class="mapping-grid">
+      <label>이름 <input type="text" id="rmName" placeholder="예: 구태형" /></label>
+      <div class="two-col">
+        <label>부서/직함 <input type="text" id="rmDept" placeholder="예: 퇴직연금부 RM" /></label>
+        <label>연락처 <input type="text" id="rmContact" placeholder="예: 010-0000-0000" /></label>
+      </div>
+    </div>
+  </section>
+
+  <div class="no-print action-row">
+    <button type="button" id="printBtn" class="btn primary">PDF로 저장(인쇄)</button>
+    <button type="button" id="resetBtn" class="btn small danger">전체 초기화</button>
+  </div>
+  <p class="hint no-print">"PDF로 저장" 버튼을 누르면 인쇄 창이 열립니다. 인쇄 대상(프린터) 선택에서 <strong>"PDF로 저장"</strong>을 고르고 저장하면 파일로 남습니다. 아래 요약 화면이 그대로 출력됩니다.</p>
+
+  <section class="card" id="reportSection">
+    <h2 class="no-print">결과 요약 미리보기 (고객 제시용)</h2>
+    <div id="reportContent"></div>
+  </section>
+
+</main>
+
+<footer class="no-print">
+  <p>모든 계산은 이 화면(브라우저) 안에서만 처리됩니다. 서버로 전송되거나 저장되지 않습니다. 신상품 금리·작성자 정보만 다음 사용을 위해 이 기기에 저장됩니다.</p>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>
