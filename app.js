@@ -122,6 +122,7 @@
     el.monthlyRate = document.getElementById("monthlyRate");
     el.defaultOptionRate = document.getElementById("defaultOptionRate");
     el.applyTemplate = document.getElementById("applyTemplate");
+    el.resetTemplateBtn = document.getElementById("resetTemplate");
     el.customerList = document.getElementById("customerList");
     el.sendProgressText = document.getElementById("sendProgressText");
     el.scrollNextBtn = document.getElementById("scrollNextBtn");
@@ -168,6 +169,10 @@
     el.applyMapping.addEventListener("click", handleApplyMapping);
     el.applyFilter.addEventListener("click", handleApplyFilter);
     el.applyTemplate.addEventListener("click", handleApplyTemplate);
+    el.resetTemplateBtn.addEventListener("click", function () {
+      if (!confirm("지금 작성 중인 문구를 지우고 기본 문구로 되돌릴까요?")) return;
+      el.templateInput.value = DEFAULT_TEMPLATE;
+    });
     el.scrollNextBtn.addEventListener("click", scrollToNextPending);
 
     el.useStoredContactsBtn.addEventListener("click", function () {
