@@ -77,6 +77,8 @@
     el.templateInput = document.getElementById("templateInput");
     el.applyTemplate = document.getElementById("applyTemplate");
     el.customerList = document.getElementById("customerList");
+    el.sendProgressText = document.getElementById("sendProgressText");
+    el.scrollNextBtn = document.getElementById("scrollNextBtn");
 
     el.templateInput.value = localStorage.getItem(TEMPLATE_STORAGE_KEY) || DEFAULT_TEMPLATE;
 
@@ -89,6 +91,7 @@
     el.applyMapping.addEventListener("click", handleApplyMapping);
     el.applyFilter.addEventListener("click", handleApplyFilter);
     el.applyTemplate.addEventListener("click", handleApplyTemplate);
+    el.scrollNextBtn.addEventListener("click", scrollToNextPending);
 
     el.useStoredContactsBtn.addEventListener("click", function () {
       state.useStoredContacts = true;
@@ -705,6 +708,7 @@
 
     if (!state.filtered.length) {
       el.customerList.innerHTML = '<p class="empty-msg">선택한 조건에 해당하는 만기 예정 고객이 없습니다.</p>';
+      el.sendProgressText.textContent = "";
       el.stepSend.classList.remove("hidden");
       el.stepSend.scrollIntoView({ behavior: "smooth" });
       return;
@@ -748,6 +752,8 @@
           var badge = document.getElementById("status-" + idx);
           if (badge) badge.textContent = "발송 연결됨";
           item.classList.add("done");
+          updateSendProgress();
+          setTimeout(scrollToNextPending, 400);
         });
         actions.appendChild(sendLink);
       }
@@ -756,8 +762,33 @@
       el.customerList.appendChild(item);
     });
 
+    updateSendProgress();
     el.stepSend.classList.remove("hidden");
     el.stepSend.scrollIntoView({ behavior: "smooth" });
+  }
+
+  function updateSendProgress() {
+    var missing = state.filtered.filter(function (c) { return c.phoneMissing; }).length;
+    var sendable = state.filtered.length - missing;
+    var doneCount = el.customerList.querySelectorAll(".customer-item.done").length;
+    var remaining = sendable - doneCount;
+    var text = "발송 대기 " + remaining + "명 / 전체 " + sendable + "명";
+    if (missing) text += " (연락처 확인 필요 " + missing + "명 별도)";
+    el.sendProgressText.textContent = text;
+  }
+
+  function scrollToNextPending() {
+    var items = el.customerList.querySelectorAll(".customer-item");
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i];
+      if (item.classList.contains("done") || item.classList.contains("missing-phone")) continue;
+      item.scrollIntoView({ behavior: "smooth", block: "center" });
+      item.classList.add("highlight");
+      (function (target) {
+        setTimeout(function () { target.classList.remove("highlight"); }, 1500);
+      })(item);
+      return;
+    }
   }
 
   function escapeHtml(str) {

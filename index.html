@@ -112,6 +112,10 @@
   <section id="step-send" class="card hidden">
     <h2>5. 발송 대상</h2>
     <p class="hint">각 항목의 "문자 보내기"를 누르면 휴대폰 기본 문자 앱이 번호와 문구를 채운 채 열립니다. 그 화면에서 보내기를 눌러야 실제 발송됩니다 (통신사 문자 요금제 사용, 별도 비용/API 없음).</p>
+    <div class="send-progress-bar">
+      <span id="sendProgressText"></span>
+      <button id="scrollNextBtn" type="button" class="btn small">다음 미발송으로 이동</button>
+    </div>
     <div id="customerList"></div>
   </section>
 
