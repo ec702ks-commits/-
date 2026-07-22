@@ -204,6 +204,15 @@ textarea {
   background: #12632e;
 }
 
+.btn.kakao {
+  background: #fee500;
+  color: #191919;
+}
+
+.btn.kakao:active {
+  background: #e6ce00;
+}
+
 .btn.small {
   padding: 8px 14px;
   font-size: 0.88rem;

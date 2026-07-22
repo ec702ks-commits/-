@@ -972,6 +972,24 @@
     return "sms:" + digits + separator + "body=" + encodeURIComponent(message);
   }
 
+  function shareViaKakao(message) {
+    if (navigator.share) {
+      navigator.share({ text: message }).catch(function () {});
+      return;
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(message)
+        .then(function () {
+          alert("문구가 복사되었습니다. 카카오톡에서 대화 상대를 선택해 붙여넣기 해주세요.");
+        })
+        .catch(function () {
+          alert("복사에 실패했습니다. 문구를 직접 선택해 복사해주세요.");
+        });
+      return;
+    }
+    alert("이 브라우저에서는 공유하기가 지원되지 않습니다. 문구를 직접 복사해서 카카오톡에 붙여넣어 주세요.");
+  }
+
   function handleApplyTemplate() {
     var template = el.templateInput.value;
     localStorage.setItem(TEMPLATE_STORAGE_KEY, template);
@@ -1027,12 +1045,28 @@
           var badge = document.getElementById("status-" + idx);
           if (badge) badge.textContent = "발송 연결됨";
           item.classList.add("done");
-          recordSendHistory(customer, message);
+          recordSendHistory(customer, message, "문자");
           updateSendProgress();
           applyListFilters();
           setTimeout(scrollToNextPending, 400);
         });
         actions.appendChild(sendLink);
+
+        var kakaoBtn = document.createElement("button");
+        kakaoBtn.type = "button";
+        kakaoBtn.className = "btn kakao small";
+        kakaoBtn.textContent = "카톡으로 보내기";
+        kakaoBtn.addEventListener("click", function () {
+          shareViaKakao(message);
+          var badge = document.getElementById("status-" + idx);
+          if (badge) badge.textContent = "카톡 공유 열림";
+          item.classList.add("done");
+          recordSendHistory(customer, message, "카카오톡");
+          updateSendProgress();
+          applyListFilters();
+          setTimeout(scrollToNextPending, 400);
+        });
+        actions.appendChild(kakaoBtn);
       }
 
       item.appendChild(actions);
@@ -1135,7 +1169,7 @@
     }
   }
 
-  function recordSendHistory(customer, message) {
+  function recordSendHistory(customer, message, channel) {
     var history = loadHistory();
     history.push({
       ts: new Date().toISOString(),
@@ -1144,6 +1178,7 @@
       phone: customer.phone,
       products: customer.products.map(formatProductLine).join(", "),
       message: message,
+      channel: channel || "문자",
     });
     if (history.length > HISTORY_MAX_ENTRIES) {
       history = history.slice(history.length - HISTORY_MAX_ENTRIES);
@@ -1194,7 +1229,7 @@
       label.className = "db-row-name";
       var d = new Date(h.ts);
       var timeStr = formatDate(d) + " " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
-      label.textContent = timeStr + " — " + h.name + " (" + formatPhoneDisplay(h.phone) + ") — " + h.products;
+      label.textContent = timeStr + " [" + (h.channel || "문자") + "] — " + h.name + " (" + formatPhoneDisplay(h.phone) + ") — " + h.products;
       row.appendChild(label);
 
       el.historyList.appendChild(row);
