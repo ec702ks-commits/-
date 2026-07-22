@@ -17,25 +17,35 @@
   <section id="step-upload" class="card">
     <h2>1. 엑셀 업로드</h2>
 
-    <div id="contactsDbInfo" class="upload-block hidden">
-      <p class="upload-label">저장된 연락처 DB</p>
-      <p class="hint" id="contactsDbStatus"></p>
-      <div class="actions" style="justify-content: flex-start; margin-top: 8px; flex-wrap: wrap;">
-        <button id="useStoredContacts" type="button" class="btn primary small">이 DB 사용</button>
-        <button id="manageContactsDb" type="button" class="btn small">DB 보기/수정</button>
-        <button id="clearContactsDb" type="button" class="btn small danger">DB 삭제</button>
-      </div>
+    <div id="contactsDbInfo" class="upload-block">
+      <p class="upload-label">연락처 DB</p>
 
-      <div id="contactsDbManager" class="hidden db-manager">
-        <input type="text" id="contactsDbSearch" placeholder="이름으로 검색" />
-        <div id="contactsDbList" class="db-list"></div>
-        <div class="db-add-row">
-          <input type="text" id="newContactName" placeholder="이름" />
-          <input type="text" id="newContactAux" placeholder="보조 키(선택)" />
-          <input type="text" id="newContactPhone" placeholder="연락처" />
-          <button id="addContactEntry" type="button" class="btn primary small">추가</button>
+      <div id="contactsDbExistingInfo" class="hidden">
+        <p class="hint" id="contactsDbStatus"></p>
+        <div class="actions" style="justify-content: flex-start; margin-top: 8px; flex-wrap: wrap;">
+          <button id="useStoredContacts" type="button" class="btn primary small">이 DB 사용</button>
+          <button id="manageContactsDb" type="button" class="btn small">DB 보기/수정</button>
+          <button id="exportContactsDb" type="button" class="btn small">DB 내보내기</button>
+          <button id="clearContactsDb" type="button" class="btn small danger">DB 삭제</button>
+        </div>
+
+        <div id="contactsDbManager" class="hidden db-manager">
+          <input type="text" id="contactsDbSearch" placeholder="이름으로 검색" />
+          <div id="contactsDbList" class="db-list"></div>
+          <div class="db-add-row">
+            <input type="text" id="newContactName" placeholder="이름" />
+            <input type="text" id="newContactAux" placeholder="보조 키(선택)" />
+            <input type="text" id="newContactPhone" placeholder="연락처" />
+            <button id="addContactEntry" type="button" class="btn primary small">추가</button>
+          </div>
         </div>
       </div>
+
+      <div class="actions" style="justify-content: flex-start; margin-top: 8px;">
+        <input type="file" id="importContactsDbInput" accept=".json" class="visually-hidden" />
+        <label for="importContactsDbInput" class="btn small file-label">DB 가져오기</label>
+      </div>
+      <p class="hint">다른 기기(폰↔컴퓨터)와 연락처 DB를 맞추려면, 한쪽에서 "DB 내보내기"한 파일을 카카오톡/이메일 등으로 옮겨서 다른 쪽에서 "DB 가져오기"하면 됩니다.</p>
     </div>
 
     <p class="hint">만기상품 엑셀은 필수입니다. 연락처가 그 파일에 없고 별도 파일에 있다면, 연락처 엑셀도 함께 올려주세요.</p>

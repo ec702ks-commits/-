@@ -57,9 +57,12 @@
     el.contactsPassword = document.getElementById("contactsPassword");
     el.proceedToMapping = document.getElementById("proceedToMapping");
     el.contactsDbInfo = document.getElementById("contactsDbInfo");
+    el.contactsDbExistingInfo = document.getElementById("contactsDbExistingInfo");
     el.contactsDbStatus = document.getElementById("contactsDbStatus");
     el.useStoredContactsBtn = document.getElementById("useStoredContacts");
     el.clearContactsDbBtn = document.getElementById("clearContactsDb");
+    el.exportContactsDbBtn = document.getElementById("exportContactsDb");
+    el.importContactsDbInput = document.getElementById("importContactsDbInput");
     el.manageContactsDbBtn = document.getElementById("manageContactsDb");
     el.contactsDbManager = document.getElementById("contactsDbManager");
     el.contactsDbSearch = document.getElementById("contactsDbSearch");
@@ -163,6 +166,9 @@
       el.contactsDbManager.classList.add("hidden");
       refreshContactsDbUI();
     });
+
+    el.exportContactsDbBtn.addEventListener("click", exportContactsDb);
+    el.importContactsDbInput.addEventListener("change", handleImportContactsDb);
 
     el.manageContactsDbBtn.addEventListener("click", function () {
       el.contactsDbManager.classList.toggle("hidden");
@@ -322,11 +328,56 @@
     var db = loadContactsDb();
     state.storedContactsDb = db;
     if (!db) {
-      el.contactsDbInfo.classList.add("hidden");
+      el.contactsDbExistingInfo.classList.add("hidden");
       return;
     }
-    el.contactsDbInfo.classList.remove("hidden");
+    el.contactsDbExistingInfo.classList.remove("hidden");
     el.contactsDbStatus.textContent = db.count + "명 저장됨 (최근 저장: " + formatDate(new Date(db.updatedAt)) + ")";
+  }
+
+  function exportContactsDb() {
+    var db = state.storedContactsDb || loadContactsDb();
+    if (!db) {
+      alert("내보낼 연락처 DB가 없습니다.");
+      return;
+    }
+    var blob = new Blob([JSON.stringify(db)], { type: "application/json" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    var today = new Date();
+    var dateStr = today.getFullYear() + String(today.getMonth() + 1).padStart(2, "0") + String(today.getDate()).padStart(2, "0");
+    a.href = url;
+    a.download = "연락처DB_" + dateStr + ".json";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+
+  function handleImportContactsDb(evt) {
+    var file = evt.target.files[0];
+    if (!file) return;
+
+    var reader = new FileReader();
+    reader.onload = function (e) {
+      try {
+        var imported = JSON.parse(e.target.result);
+        if (!imported || typeof imported.map !== "object") {
+          alert("올바른 연락처 DB 파일이 아닙니다.");
+          return;
+        }
+        var importedCount = Object.keys(imported.map).length;
+        var existingMap = (state.storedContactsDb && state.storedContactsDb.map) || {};
+        var mergedMap = Object.assign({}, existingMap, imported.map);
+        state.storedContactsDb = saveContactsDb(mergedMap);
+        refreshContactsDbUI();
+        alert("연락처 " + importedCount + "건을 가져와 합쳤습니다. (전체 " + state.storedContactsDb.count + "건)");
+      } catch (err) {
+        alert("파일을 읽는 중 오류가 발생했습니다. 올바른 DB 내보내기 파일인지 확인해주세요.");
+      }
+    };
+    reader.readAsText(file);
+    evt.target.value = "";
   }
 
   function parseWorkbookFile(file, password, onSuccess, onError) {
