@@ -32,7 +32,9 @@
   function cacheEls() {
     [
       "customerName", "principal", "startDate", "maturityDate", "contractRate", "todayDate",
-      "periodSummary", "holdAmount", "holdAmountSuggestion", "useHoldSuggestion",
+      "periodSummary", "holdAmount",
+      "suggestSimple", "suggestCompoundYear", "suggestCompoundMonth",
+      "useSuggestSimple", "useSuggestCompoundYear", "useSuggestCompoundMonth",
       "modeDirect", "modeRatio", "directModeFields", "ratioModeFields",
       "directCancelAmount", "directPenaltyAmount", "appliedRatePct", "ratioModeCalc",
       "cancelAmountResult", "newProductRows", "addProductRow",
@@ -47,7 +49,7 @@
     return new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
   }
 
-  function bindDateMask(input) {
+  function bindDateMask(input, nextInput) {
     input.setAttribute("inputmode", "numeric");
     input.setAttribute("autocomplete", "off");
     input.setAttribute("placeholder", "YYYY.MM.DD");
@@ -58,7 +60,26 @@
       if (digits.length > 4) formatted += "." + digits.slice(4, 6);
       if (digits.length > 6) formatted += "." + digits.slice(6, 8);
       input.value = formatted;
+      if (digits.length === 8) {
+        if (nextInput) nextInput.focus();
+        else input.blur();
+      }
     });
+  }
+
+  // ---------- 금액: 천 단위 콤마(회계식) 입력 도우미 ----------
+
+  function bindAmountMask(input) {
+    input.setAttribute("inputmode", "numeric");
+    input.setAttribute("autocomplete", "off");
+    input.addEventListener("input", function () {
+      var digits = input.value.replace(/[^\d]/g, "");
+      input.value = digits === "" ? "" : Number(digits).toLocaleString("ko-KR");
+    });
+  }
+
+  function setAmountValue(input, num) {
+    input.value = (num === null || num === undefined || isNaN(num)) ? "" : Math.round(num).toLocaleString("ko-KR");
   }
 
   function parseDateUTC(str) {
@@ -116,7 +137,7 @@
   }
 
   function numVal(input) {
-    var v = parseFloat(input.value);
+    var v = parseFloat(String(input.value).replace(/,/g, ""));
     return isNaN(v) ? null : v;
   }
 
@@ -243,12 +264,20 @@
 
   function updateHoldSuggestion(c) {
     if (c.principal === null || c.rate === null || c.totalYears === null) {
-      el.holdAmountSuggestion.textContent = "-";
+      el.suggestSimple.textContent = "-";
+      el.suggestCompoundYear.textContent = "-";
+      el.suggestCompoundMonth.textContent = "-";
       return null;
     }
-    var suggestion = c.principal * (1 + (c.rate / 100) * c.totalYears);
-    el.holdAmountSuggestion.textContent = formatWon(suggestion) + " (원금×(1+약정금리×전체기간), 단리 추정)";
-    return suggestion;
+    var r = c.rate / 100;
+    var t = c.totalYears;
+    var simple = c.principal * (1 + r * t);
+    var compoundYear = c.principal * Math.pow(1 + r, t);
+    var compoundMonth = c.principal * Math.pow(1 + r / 12, 12 * t);
+    el.suggestSimple.textContent = formatWon(simple);
+    el.suggestCompoundYear.textContent = formatWon(compoundYear);
+    el.suggestCompoundMonth.textContent = formatWon(compoundMonth);
+    return { simple: simple, compoundYear: compoundYear, compoundMonth: compoundMonth };
   }
 
   function updatePenalty(c) {
@@ -286,7 +315,8 @@
   function renderReport() {
     var c = gatherCustomer();
     updatePeriodSummary(c);
-    var holdSuggestion = updateHoldSuggestion(c);
+    var holdSuggestions = updateHoldSuggestion(c);
+    var holdSuggestion = holdSuggestions ? holdSuggestions.simple : null;
     var penalty = updatePenalty(c);
     var holdAmount = numVal(el.holdAmount);
     var holdAmountForCompare = holdAmount === null ? holdSuggestion : holdAmount;
@@ -468,14 +498,19 @@
     el.modeDirect.addEventListener("change", renderReport);
     el.modeRatio.addEventListener("change", renderReport);
 
-    el.useHoldSuggestion.addEventListener("click", function () {
-      var c = gatherCustomer();
-      var suggestion = updateHoldSuggestion(c);
-      if (suggestion !== null) {
-        el.holdAmount.value = Math.round(suggestion);
-        renderReport();
-      }
-    });
+    function bindSuggestUse(button, key) {
+      button.addEventListener("click", function () {
+        var c = gatherCustomer();
+        var s = updateHoldSuggestion(c);
+        if (s && s[key] !== null && !isNaN(s[key])) {
+          setAmountValue(el.holdAmount, s[key]);
+          renderReport();
+        }
+      });
+    }
+    bindSuggestUse(el.useSuggestSimple, "simple");
+    bindSuggestUse(el.useSuggestCompoundYear, "compoundYear");
+    bindSuggestUse(el.useSuggestCompoundMonth, "compoundMonth");
 
     el.addProductRow.addEventListener("click", function () {
       addRow();
@@ -505,8 +540,12 @@
   function init() {
     cacheEls();
 
-    [el.startDate, el.maturityDate, el.todayDate].forEach(bindDateMask);
+    bindDateMask(el.startDate, el.maturityDate);
+    bindDateMask(el.maturityDate, el.todayDate);
+    bindDateMask(el.todayDate, null);
     el.todayDate.value = formatDateUTC(todayLocalDate());
+
+    [el.principal, el.holdAmount, el.directCancelAmount, el.directPenaltyAmount].forEach(bindAmountMask);
 
     state.rows = loadRows().map(function (r) {
       return { id: state.nextId++, label: r.label, years: r.years, rate: r.rate };

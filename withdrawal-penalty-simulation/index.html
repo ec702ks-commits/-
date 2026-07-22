@@ -21,7 +21,7 @@
         <input type="text" id="customerName" placeholder="예: 홍길동 고객님 / OO주식회사" />
       </label>
       <label>가입원금(원)
-        <input type="number" id="principal" min="0" step="1" placeholder="예: 100000000" />
+        <input type="text" id="principal" placeholder="예: 100,000,000" />
       </label>
       <div class="two-col">
         <label>명세일자
@@ -47,12 +47,27 @@
     <h2><span class="step-badge">2</span>만기까지 유지할 경우</h2>
     <div class="mapping-grid">
       <label>만기 시 예상 수령액(원)
-        <input type="number" id="holdAmount" min="0" step="1" placeholder="시스템 조회값 또는 아래 참고값 사용" />
+        <input type="text" id="holdAmount" placeholder="시스템 조회값 또는 아래 예시 사용" />
       </label>
     </div>
-    <p class="hint">참고(단리 추정): <span id="holdAmountSuggestion">-</span>
-      <button type="button" id="useHoldSuggestion" class="btn small">이 값 채우기</button>
-    </p>
+    <p class="hint">참고 예시(원금×약정금리×전체기간 기준) — 실제 상품의 이자계산방식과 맞는 값을 골라 사용하세요.</p>
+    <div class="suggest-list">
+      <div class="suggest-row">
+        <span class="suggest-label">연단리</span>
+        <span class="suggest-value" id="suggestSimple">-</span>
+        <button type="button" id="useSuggestSimple" class="btn small">사용</button>
+      </div>
+      <div class="suggest-row">
+        <span class="suggest-label">연복리</span>
+        <span class="suggest-value" id="suggestCompoundYear">-</span>
+        <button type="button" id="useSuggestCompoundYear" class="btn small">사용</button>
+      </div>
+      <div class="suggest-row">
+        <span class="suggest-label">월복리</span>
+        <span class="suggest-value" id="suggestCompoundMonth">-</span>
+        <button type="button" id="useSuggestCompoundMonth" class="btn small">사용</button>
+      </div>
+    </div>
   </section>
 
   <section class="card no-print" id="penaltySection">
@@ -66,10 +81,10 @@
 
     <div id="directModeFields" class="mapping-grid">
       <label>해지적립금(패널티 차감 후, 재예치 가능 금액, 원)
-        <input type="number" id="directCancelAmount" min="0" step="1" />
+        <input type="text" id="directCancelAmount" />
       </label>
       <label>해지패널티 금액(원) — 선택, 참고용
-        <input type="number" id="directPenaltyAmount" min="0" step="1" />
+        <input type="text" id="directPenaltyAmount" />
       </label>
     </div>
 
