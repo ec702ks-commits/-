@@ -50,19 +50,21 @@
 
     <p class="hint">만기상품 엑셀은 필수입니다. 연락처가 그 파일에 없고 별도 파일에 있다면, 연락처 엑셀도 함께 올려주세요.</p>
 
-    <div class="upload-block">
+    <div class="upload-block dropzone" id="dropzoneProducts">
       <p class="upload-label">① 만기상품 엑셀 (필수)</p>
       <input type="file" id="fileInputProducts" accept=".xlsx,.xls,.csv" class="visually-hidden" />
       <label for="fileInputProducts" class="btn primary file-label">만기상품 엑셀 선택</label>
-      <input type="password" id="productsPassword" placeholder="파일에 암호가 있으면 입력 (선택)" autocomplete="off" />
+      <p class="hint">여기로 파일을 끌어다 놓아도 됩니다.</p>
+      <input type="password" id="productsPassword" placeholder="파일에 암호가 있으면 입력 (선택)" autocomplete="off" inputmode="numeric" pattern="[0-9]*" />
       <p class="hint" id="fileNameDisplayProducts"></p>
     </div>
 
-    <div class="upload-block">
+    <div class="upload-block dropzone" id="dropzoneContacts">
       <p class="upload-label">② 연락처 엑셀 (선택 — 단체별로 여러 파일인 경우 한 번에 여러 개 선택 가능)</p>
       <input type="file" id="fileInputContacts" accept=".xlsx,.xls,.csv" class="visually-hidden" multiple />
       <label for="fileInputContacts" class="btn primary file-label">연락처 엑셀 선택 (여러 개 가능)</label>
-      <input type="password" id="contactsPassword" placeholder="파일에 암호가 있으면 입력 (선택, 여러 파일이면 동일 암호로 시도)" autocomplete="off" />
+      <p class="hint">여기로 파일을 끌어다 놓아도 됩니다(여러 개 한 번에 가능).</p>
+      <input type="password" id="contactsPassword" placeholder="파일에 암호가 있으면 입력 (선택, 여러 파일이면 동일 암호로 시도)" autocomplete="off" inputmode="numeric" pattern="[0-9]*" />
       <p class="hint" id="fileNameDisplayContacts"></p>
       <p class="hint">여기서 올린 연락처는 매핑을 마치면 이 기기에 저장되어, 다음부터는 "이 DB 사용"만 누르면 됩니다.</p>
     </div>
@@ -130,7 +132,7 @@
       <button id="resetTemplate" type="button" class="btn small">기본값으로 초기화</button>
     </div>
 
-    <div class="upload-block" style="margin-top: 14px;">
+    <div class="upload-block dropzone" id="dropzoneImage" style="margin-top: 14px;">
       <p class="upload-label">안내 이미지 (선택 — 카톡으로 보낼 때만 함께 공유됩니다)</p>
       <input type="file" id="manualImageInput" accept="image/*" class="visually-hidden" />
       <label for="manualImageInput" class="btn small file-label">이미지 선택</label>

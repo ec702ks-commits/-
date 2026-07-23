@@ -159,6 +159,12 @@
     el.fileInputProducts.addEventListener("change", handleProductsFile);
     el.fileInputContacts.addEventListener("change", handleContactsFile);
 
+    document.addEventListener("dragover", function (e) { e.preventDefault(); });
+    document.addEventListener("drop", function (e) { e.preventDefault(); });
+    setupDropzone(document.getElementById("dropzoneProducts"), el.fileInputProducts);
+    setupDropzone(document.getElementById("dropzoneContacts"), el.fileInputContacts);
+    setupDropzone(document.getElementById("dropzoneImage"), el.manualImageInput);
+
     el.productsPassword.addEventListener("change", function () {
       if (!state.pendingProductsFile) return;
       if (el.productsPassword.value === state.lastProductsPasswordAttempt) return;
@@ -472,6 +478,35 @@
       }
     };
     reader.readAsArrayBuffer(file);
+  }
+
+  function setupDropzone(zoneEl, inputEl) {
+    if (!zoneEl || !inputEl) return;
+    ["dragenter", "dragover"].forEach(function (evtName) {
+      zoneEl.addEventListener(evtName, function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        zoneEl.classList.add("drag-over");
+      });
+    });
+    ["dragleave", "dragend"].forEach(function (evtName) {
+      zoneEl.addEventListener(evtName, function (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        zoneEl.classList.remove("drag-over");
+      });
+    });
+    zoneEl.addEventListener("drop", function (e) {
+      e.preventDefault();
+      e.stopPropagation();
+      zoneEl.classList.remove("drag-over");
+      var files = e.dataTransfer && e.dataTransfer.files;
+      if (!files || !files.length) return;
+      var dt = new DataTransfer();
+      Array.prototype.forEach.call(files, function (f) { dt.items.add(f); });
+      inputEl.files = dt.files;
+      inputEl.dispatchEvent(new Event("change", { bubbles: true }));
+    });
   }
 
   function handleProductsFile(evt) {

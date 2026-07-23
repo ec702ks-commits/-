@@ -81,6 +81,16 @@ main {
   padding-bottom: 0;
 }
 
+.dropzone {
+  border-radius: 10px;
+  transition: background-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.dropzone.drag-over {
+  background: #eef3ff;
+  box-shadow: 0 0 0 2px var(--primary) inset;
+}
+
 .upload-label {
   font-size: 0.9rem;
   font-weight: 600;
