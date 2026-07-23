@@ -275,6 +275,23 @@ button:focus-visible {
   color: var(--text-muted);
 }
 
+.term-quick {
+  margin: -4px 0 4px;
+}
+
+.term-quick-label {
+  display: block;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.term-quick-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .radio-row {
   display: flex;
   gap: 16px;
@@ -558,6 +575,7 @@ footer {
 
 .bar-fill.option-fill {
   background: linear-gradient(90deg, var(--primary), var(--navy-700));
+  border: 1px solid var(--navy-900);
 }
 
 .bar-fill.baseline-fill {
@@ -750,5 +768,22 @@ footer {
   .report-banner {
     margin: 0 0 20px;
     border-radius: 10px;
+    /* 인쇄/PDF 변환기가 배경색을 그리지 못해도 글자가 항상 보이도록,
+       진한 배경 대신 옅은 배경 + 진한 글자색으로 강제 전환한다. */
+    background: var(--gold-soft) !important;
+    border: 2px solid var(--navy-900);
+    color: var(--text) !important;
+  }
+
+  .report-banner-eyebrow {
+    color: var(--gold-strong) !important;
+  }
+
+  .report-banner .report-title {
+    color: var(--navy-900) !important;
+  }
+
+  .report-banner .report-meta {
+    color: var(--text-muted) !important;
   }
 }

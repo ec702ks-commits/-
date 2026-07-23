@@ -643,6 +643,19 @@
     el.modeDirect.addEventListener("change", renderReport);
     el.modeRatio.addEventListener("change", renderReport);
 
+    document.querySelectorAll(".term-quick-btn").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var start = parseDateUTC(el.startDate.value);
+        if (!start) {
+          alert("먼저 명세일자를 입력해주세요.");
+          return;
+        }
+        var years = parseFloat(btn.getAttribute("data-term-years"));
+        el.maturityDate.value = formatDateUTC(addYears(start, years));
+        renderReport();
+      });
+    });
+
     function bindSuggestUse(button, key) {
       button.addEventListener("click", function () {
         var c = gatherCustomer();
