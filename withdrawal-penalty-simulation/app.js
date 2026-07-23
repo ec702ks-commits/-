@@ -32,10 +32,10 @@
 
   function cacheEls() {
     [
-      "customerName", "principal", "startDate", "maturityDate", "contractRate", "todayDate",
+      "customerName", "principal", "startDate", "maturityDate", "contractRate", "interestMethod", "todayDate",
       "periodSummary", "holdAmount",
+      "suggestMainLabel", "suggestMain", "useSuggestMain", "methodNote",
       "suggestSimple", "suggestCompoundYear", "suggestCompoundMonth",
-      "useSuggestSimple", "useSuggestCompoundYear", "useSuggestCompoundMonth",
       "modeDirect", "modeRatio", "directModeFields", "ratioModeFields",
       "directCancelAmount", "directPenaltyAmount", "appliedRatePct", "ratioModeCalc",
       "cancelAmountResult", "newProductRows", "addProductRow",
@@ -269,11 +269,25 @@
 
   // ---------- 계산 ----------
 
+  // 이자계산방식(단리/연복리/월복리)에 따른 성장계수. r=연이율(소수), t=기간(년)
+  function growthFactor(method, r, t) {
+    if (method === "simple") return 1 + r * t;
+    if (method === "compoundMonth") return Math.pow(1 + r / 12, 12 * t);
+    return Math.pow(1 + r, t); // compoundYear (기본값)
+  }
+
+  function methodLabel(method) {
+    if (method === "simple") return "연단리";
+    if (method === "compoundMonth") return "월복리";
+    return "연복리";
+  }
+
   function gatherCustomer() {
     var principal = numVal(el.principal);
     var start = parseDateUTC(el.startDate.value);
     var maturity = parseDateUTC(el.maturityDate.value);
     var rate = numVal(el.contractRate);
+    var method = el.interestMethod.value || "compoundYear";
     var today = parseDateUTC(el.todayDate.value);
 
     var totalYears = yearsBetween(start, maturity);
@@ -282,7 +296,7 @@
 
     return {
       customerName: el.customerName.value.trim(),
-      principal: principal, start: start, maturity: maturity, rate: rate, today: today,
+      principal: principal, start: start, maturity: maturity, rate: rate, method: method, today: today,
       totalYears: totalYears, elapsedYears: elapsedYears, remainingYears: remainingYears,
       remainingYearsClamped: remainingYears === null ? null : Math.max(0, remainingYears),
       valid: principal !== null && start && maturity && rate !== null && today
@@ -313,13 +327,13 @@
 
     validEvents.forEach(function (e) {
       var segYears = Math.max(0, yearsBetween(segStart, e.date) || 0);
-      balance = Math.max(0, balance * (1 + r * segYears) - e.amount);
+      balance = Math.max(0, balance * growthFactor(c.method, r, segYears) - e.amount);
       netPrincipal = Math.max(0, netPrincipal - e.amount);
       segStart = e.date;
     });
 
     var lastYears = Math.max(0, yearsBetween(segStart, c.today) || 0);
-    balance = balance * (1 + r * lastYears);
+    balance = balance * growthFactor(c.method, r, lastYears);
 
     var withdrawnTotal = validEvents.reduce(function (s, e) { return s + e.amount; }, 0);
 
@@ -346,32 +360,36 @@
 
   function updateHoldSuggestion(c, history) {
     if (c.principal === null || c.rate === null || c.totalYears === null) {
+      el.suggestMain.textContent = "-";
       el.suggestSimple.textContent = "-";
       el.suggestCompoundYear.textContent = "-";
       el.suggestCompoundMonth.textContent = "-";
       return null;
     }
     var r = c.rate / 100;
-    var simple, compoundYear, compoundMonth;
+    var base = c.principal;
+    var t = c.totalYears;
 
     if (history && history.hasEvents) {
       // 인출 이력이 있으면, 원 원금이 아니라 "오늘 기준 실제 잔액"에서 잔여기간만큼만 굴린다.
-      var base = history.balanceToday;
-      var t2 = c.remainingYearsClamped === null ? 0 : c.remainingYearsClamped;
-      simple = base * (1 + r * t2);
-      compoundYear = base * Math.pow(1 + r, t2);
-      compoundMonth = base * Math.pow(1 + r / 12, 12 * t2);
-    } else {
-      var t = c.totalYears;
-      simple = c.principal * (1 + r * t);
-      compoundYear = c.principal * Math.pow(1 + r, t);
-      compoundMonth = c.principal * Math.pow(1 + r / 12, 12 * t);
+      base = history.balanceToday;
+      t = c.remainingYearsClamped === null ? 0 : c.remainingYearsClamped;
     }
 
+    var simple = base * growthFactor("simple", r, t);
+    var compoundYear = base * growthFactor("compoundYear", r, t);
+    var compoundMonth = base * growthFactor("compoundMonth", r, t);
+    var main = base * growthFactor(c.method, r, t);
+
+    var label = methodLabel(c.method);
+    el.suggestMainLabel.textContent = label;
+    el.suggestMain.textContent = formatWon(main);
+    if (el.methodNote) el.methodNote.textContent = label;
     el.suggestSimple.textContent = formatWon(simple);
     el.suggestCompoundYear.textContent = formatWon(compoundYear);
     el.suggestCompoundMonth.textContent = formatWon(compoundMonth);
-    return { simple: simple, compoundYear: compoundYear, compoundMonth: compoundMonth };
+
+    return { simple: simple, compoundYear: compoundYear, compoundMonth: compoundMonth, main: main };
   }
 
   function updatePenalty(c, history) {
@@ -394,7 +412,7 @@
           netPrincipal = history.netPrincipal;
           interestPortion = Math.max(0, preValue - netPrincipal);
         } else {
-          preValue = c.principal * (1 + (c.rate / 100) * c.elapsedYears);
+          preValue = c.principal * growthFactor(c.method, c.rate / 100, c.elapsedYears);
           netPrincipal = c.principal;
           interestPortion = preValue - netPrincipal;
         }
@@ -476,7 +494,7 @@
 
     // ---- KPI 타일 ----
     html += '<div class="kpi-row">';
-    html += kpiTile("만기까지 유지 시", formatWon(holdAmountForCompare), "만기일 " + formatDateUTC(c.maturity) + (holdAmount === null ? " · 단리 추정치" : ""), false);
+    html += kpiTile("만기까지 유지 시", formatWon(holdAmountForCompare), "만기일 " + formatDateUTC(c.maturity) + (holdAmount === null ? " · " + methodLabel(c.method) + " 추정치" : ""), false);
     html += kpiTile("해지적립금(재예치 원금)", formatWon(penalty.cancelAmount), penalty.penaltyAmount !== null ? "해지패널티 " + formatWon(penalty.penaltyAmount) : (penalty.mode === "direct" ? "직접입력" : ""), false);
     if (bestRow && bestRow.diff !== null) {
       if (bestRow.diff > 0) {
@@ -512,7 +530,7 @@
     html += '<div class="report-block"><h3>기존상품 정보</h3>';
     html += kv("가입원금", formatWon(c.principal));
     html += kv("명세일자 → 만기일", formatDateUTC(c.start) + " → " + formatDateUTC(c.maturity));
-    html += kv("약정금리(연)", formatPct(c.rate));
+    html += kv("약정금리(연) / 이자계산방식", formatPct(c.rate) + " / " + methodLabel(c.method));
     html += kv("전체기간 / 경과기간 / 잔여기간", formatYears(c.totalYears) + " / " + formatYears(c.elapsedYears) + " / " + formatYears(c.remainingYears));
     if (history && history.hasEvents) {
       html += kv("중간인출 이력", history.events.length + "건, 인출총액 " + formatWon(history.withdrawnTotal));
@@ -549,7 +567,7 @@
       html += "</tbody></table></div></div>";
     }
 
-    html += '<p class="report-disclaimer">본 시뮬레이션은 입력하신 정보를 기준으로 한 단리 추정 참고자료이며, 실제 적용금리·세금·수수료 등에 따라 실수령액과 차이가 있을 수 있습니다. 신상품 재예치 금액은 기존상품 만기일까지의 잔여기간에 제안금리를 적용해 환산한 값이며, 상품 자체 만기가 그보다 짧거나 길 경우 이후 재투자 조건은 별도로 확인이 필요합니다. 신상품 제안금리는 안내 시점 기준이며 향후 변동될 수 있습니다.' +
+    html += '<p class="report-disclaimer">본 시뮬레이션은 입력하신 정보를 기준으로 한 ' + methodLabel(c.method) + ' 추정 참고자료이며, 실제 적용금리·세금·수수료 등에 따라 실수령액과 차이가 있을 수 있습니다. 신상품 재예치 금액은 기존상품 만기일까지의 잔여기간에 제안금리(단리)를 적용해 환산한 값이며, 상품 자체 만기가 그보다 짧거나 길 경우 이후 재투자 조건은 별도로 확인이 필요합니다. 신상품 제안금리는 안내 시점 기준이며 향후 변동될 수 있습니다.' +
       (history && history.hasEvents ? ' 중간인출 이력은 인출액이 원금에서 먼저 차감된 것으로 보수적으로 가정해 계산했으며, 정확한 금액은 상품사 확인이 필요합니다.' : '') +
       '</p>';
 
@@ -601,6 +619,7 @@
     el.startDate.value = "";
     el.maturityDate.value = "";
     el.contractRate.value = "";
+    el.interestMethod.value = "compoundYear";
     el.todayDate.value = formatDateUTC(todayLocalDate());
     el.holdAmount.value = "";
     el.modeDirect.checked = true;
@@ -620,6 +639,7 @@
       el[id].addEventListener("input", renderReport);
     });
 
+    el.interestMethod.addEventListener("change", renderReport);
     el.modeDirect.addEventListener("change", renderReport);
     el.modeRatio.addEventListener("change", renderReport);
 
@@ -634,9 +654,7 @@
         }
       });
     }
-    bindSuggestUse(el.useSuggestSimple, "simple");
-    bindSuggestUse(el.useSuggestCompoundYear, "compoundYear");
-    bindSuggestUse(el.useSuggestCompoundMonth, "compoundMonth");
+    bindSuggestUse(el.useSuggestMain, "main");
 
     el.addProductRow.addEventListener("click", function () {
       addRow();

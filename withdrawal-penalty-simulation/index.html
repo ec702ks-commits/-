@@ -35,10 +35,17 @@
         <label>약정금리(연 %)
           <input type="number" id="contractRate" min="0" step="0.01" placeholder="예: 3.5" />
         </label>
-        <label>해지(오늘) 기준일
-          <input type="text" id="todayDate" />
+        <label>이자계산방식
+          <select id="interestMethod">
+            <option value="compoundYear" selected>연복리</option>
+            <option value="simple">연단리</option>
+            <option value="compoundMonth">월복리</option>
+          </select>
         </label>
       </div>
+      <label>해지(오늘) 기준일
+        <input type="text" id="todayDate" />
+      </label>
     </div>
     <p class="hint" id="periodSummary"></p>
 
@@ -54,27 +61,17 @@
     <h2><span class="step-badge">2</span>만기까지 유지할 경우</h2>
     <div class="mapping-grid">
       <label>만기 시 예상 수령액(원)
-        <input type="text" id="holdAmount" placeholder="시스템 조회값 또는 아래 예시 사용" />
+        <input type="text" id="holdAmount" placeholder="시스템 조회값 또는 아래 참고값 사용" />
       </label>
     </div>
-    <p class="hint">참고 예시(원금×약정금리×전체기간 기준) — 실제 상품의 이자계산방식과 맞는 값을 골라 사용하세요.</p>
     <div class="suggest-list">
       <div class="suggest-row">
-        <span class="suggest-label">연단리</span>
-        <span class="suggest-value" id="suggestSimple">-</span>
-        <button type="button" id="useSuggestSimple" class="btn small">사용</button>
-      </div>
-      <div class="suggest-row">
-        <span class="suggest-label">연복리</span>
-        <span class="suggest-value" id="suggestCompoundYear">-</span>
-        <button type="button" id="useSuggestCompoundYear" class="btn small">사용</button>
-      </div>
-      <div class="suggest-row">
-        <span class="suggest-label">월복리</span>
-        <span class="suggest-value" id="suggestCompoundMonth">-</span>
-        <button type="button" id="useSuggestCompoundMonth" class="btn small">사용</button>
+        <span class="suggest-label" id="suggestMainLabel">연복리</span>
+        <span class="suggest-value" id="suggestMain">-</span>
+        <button type="button" id="useSuggestMain" class="btn small">사용</button>
       </div>
     </div>
+    <p class="hint">1번에서 고른 "이자계산방식"(<span id="methodNote">연복리</span>) 기준 참고값입니다. 참고: 연단리 <span id="suggestSimple">-</span> · 월복리 <span id="suggestCompoundMonth">-</span> · 연복리 <span id="suggestCompoundYear">-</span></p>
   </section>
 
   <section class="card no-print" id="penaltySection">
