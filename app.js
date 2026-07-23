@@ -1133,15 +1133,68 @@
     return new Blob([bytes], { type: mime });
   }
 
+  function legacyCopyText(text) {
+    try {
+      var ta = document.createElement("textarea");
+      ta.value = text;
+      ta.setAttribute("readonly", "");
+      ta.style.position = "fixed";
+      ta.style.top = "0";
+      ta.style.left = "-9999px";
+      document.body.appendChild(ta);
+      ta.focus();
+      ta.select();
+      ta.setSelectionRange(0, text.length);
+      var ok = document.execCommand("copy");
+      document.body.removeChild(ta);
+      return ok;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function copyTextToClipboard(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText && window.isSecureContext) {
+      return navigator.clipboard.writeText(text).then(function () { return true; }).catch(function () {
+        return legacyCopyText(text);
+      });
+    }
+    return Promise.resolve(legacyCopyText(text));
+  }
+
+  function showToast(text) {
+    var toast = document.createElement("div");
+    toast.className = "toast";
+    toast.textContent = text;
+    document.body.appendChild(toast);
+    requestAnimationFrame(function () { toast.classList.add("show"); });
+    setTimeout(function () {
+      toast.classList.remove("show");
+      setTimeout(function () { toast.remove(); }, 300);
+    }, 2200);
+  }
+
+  function guessImageExtension(mime) {
+    if (!mime) return "jpg";
+    if (mime.indexOf("png") !== -1) return "png";
+    if (mime.indexOf("gif") !== -1) return "gif";
+    if (mime.indexOf("webp") !== -1) return "webp";
+    if (mime.indexOf("jpeg") !== -1 || mime.indexOf("jpg") !== -1) return "jpg";
+    return "jpg";
+  }
+
   function shareViaKakao(message, recipientName) {
     if (navigator.share) {
-      if (recipientName && navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(recipientName).catch(function () {});
+      if (recipientName) {
+        copyTextToClipboard(recipientName).then(function (ok) {
+          if (ok) showToast('"' + recipientName + '" 이름이 복사되었습니다 — 카카오톡 검색창에 붙여넣기 하세요');
+        });
       }
       if (state.manualImageDataUrl) {
         try {
           var blob = dataUrlToBlob(state.manualImageDataUrl);
-          var file = new File([blob], "안내이미지.jpg", { type: blob.type || "image/jpeg" });
+          var ext = guessImageExtension(blob.type);
+          var file = new File([blob], "안내이미지." + ext, { type: blob.type || "image/jpeg" });
           if (navigator.canShare && navigator.canShare({ files: [file], text: message })) {
             navigator.share({ text: message, files: [file] }).catch(function () {});
             return;
@@ -1151,17 +1204,13 @@
       navigator.share({ text: message }).catch(function () {});
       return;
     }
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(message)
-        .then(function () {
-          alert("문구가 복사되었습니다. 카카오톡에서 대화 상대를 선택해 붙여넣기 해주세요.");
-        })
-        .catch(function () {
-          alert("복사에 실패했습니다. 문구를 직접 선택해 복사해주세요.");
-        });
-      return;
-    }
-    alert("이 브라우저에서는 공유하기가 지원되지 않습니다. 문구를 직접 복사해서 카카오톡에 붙여넣어 주세요.");
+    copyTextToClipboard(message).then(function (ok) {
+      if (ok) {
+        alert("문구가 복사되었습니다. 카카오톡에서 대화 상대를 선택해 붙여넣기 해주세요.");
+      } else {
+        alert("이 브라우저에서는 공유하기/복사가 지원되지 않습니다. 문구를 직접 선택해 복사해주세요.");
+      }
+    });
   }
 
   function handleApplyTemplate() {
