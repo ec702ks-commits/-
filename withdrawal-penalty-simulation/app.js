@@ -99,16 +99,25 @@
     return new Date(date.getTime() + days * 86400000);
   }
 
-  // 달력 기준으로 정확히 N년 뒤(예: 2025.12.31 + 5년 = 2030.12.31)를 계산한다.
-  // 소수 기간(예: 2.5년)은 정수년만큼 달력으로 이동한 뒤 나머지를 일수로 근사한다.
+  // 달력 기준 개월수 더하기. 대상 월에 그 날짜가 없으면(예: 12/31 + 6개월 = 6월엔
+  // 31일이 없음) 다음 달로 넘어가지 않고 그 달의 마지막 날로 맞춘다(6/30).
+  function addMonthsClamped(date, months) {
+    var y = date.getUTCFullYear();
+    var m = date.getUTCMonth();
+    var d = date.getUTCDate();
+    var total = m + months;
+    var newYear = y + Math.floor(total / 12);
+    var newMonth = ((total % 12) + 12) % 12;
+    var daysInTargetMonth = new Date(Date.UTC(newYear, newMonth + 1, 0)).getUTCDate();
+    var newDay = Math.min(d, daysInTargetMonth);
+    return new Date(Date.UTC(newYear, newMonth, newDay));
+  }
+
+  // 달력 기준으로 정확히 N년 뒤를 계산한다(예: 2025.12.31 + 5년 = 2030.12.31,
+  // 2025.12.31 + 2.5년 = 2028.06.30). 연 단위를 개월수로 환산해 달력으로
+  // 이동하므로 1/2/2.5/3/5년처럼 개월 단위로 떨어지는 기간은 항상 정확하다.
   function addYears(date, years) {
-    var wholeYears = years >= 0 ? Math.floor(years) : Math.ceil(years);
-    var fraction = years - wholeYears;
-    var result = new Date(Date.UTC(date.getUTCFullYear() + wholeYears, date.getUTCMonth(), date.getUTCDate()));
-    if (fraction !== 0) {
-      result = addDaysUTC(result, Math.round(fraction * 365));
-    }
-    return result;
+    return addMonthsClamped(date, Math.round(years * 12));
   }
 
   function yearsBetween(d1, d2) {
