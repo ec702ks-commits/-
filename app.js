@@ -794,6 +794,9 @@
       return;
     }
 
+    var dominantMonth = computeDominantMonth(state.products.rows, mapping.date);
+    if (dominantMonth) el.targetMonth.value = dominantMonth;
+
     if (state.contactsFiles.length) {
       mapping.contactsName = el.mapNameContacts.value;
       mapping.contactsAuxKey = el.mapAuxContacts.value;
@@ -877,6 +880,25 @@
   function formatDate(d) {
     if (!d) return "";
     return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  }
+
+  function computeDominantMonth(rows, dateField) {
+    var counts = {};
+    rows.forEach(function (row) {
+      var d = parseDate(row[dateField]);
+      if (!d) return;
+      var key = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+      counts[key] = (counts[key] || 0) + 1;
+    });
+    var best = null;
+    var bestCount = 0;
+    Object.keys(counts).forEach(function (key) {
+      if (counts[key] > bestCount) {
+        best = key;
+        bestCount = counts[key];
+      }
+    });
+    return best;
   }
 
   function buildPhoneNumber(primary, secondary) {
@@ -1111,8 +1133,11 @@
     return new Blob([bytes], { type: mime });
   }
 
-  function shareViaKakao(message) {
+  function shareViaKakao(message, recipientName) {
     if (navigator.share) {
+      if (recipientName && navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(recipientName).catch(function () {});
+      }
       if (state.manualImageDataUrl) {
         try {
           var blob = dataUrlToBlob(state.manualImageDataUrl);
@@ -1206,7 +1231,7 @@
         kakaoBtn.className = "btn kakao small";
         kakaoBtn.textContent = "카톡으로 보내기";
         kakaoBtn.addEventListener("click", function () {
-          shareViaKakao(message);
+          shareViaKakao(message, customer.name);
           var badge = document.getElementById("status-" + idx);
           if (badge) badge.textContent = "카톡 공유 열림";
           item.classList.add("done");
