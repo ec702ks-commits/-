@@ -159,8 +159,11 @@
     el.fileInputProducts.addEventListener("change", handleProductsFile);
     el.fileInputContacts.addEventListener("change", handleContactsFile);
 
-    document.addEventListener("dragover", function (e) { e.preventDefault(); });
-    document.addEventListener("drop", function (e) { e.preventDefault(); });
+    function isFileDrag(e) {
+      return !!(e.dataTransfer && e.dataTransfer.types && Array.prototype.indexOf.call(e.dataTransfer.types, "Files") !== -1);
+    }
+    document.addEventListener("dragover", function (e) { if (isFileDrag(e)) e.preventDefault(); });
+    document.addEventListener("drop", function (e) { if (isFileDrag(e)) e.preventDefault(); });
     setupDropzone(document.getElementById("dropzoneProducts"), el.fileInputProducts);
     setupDropzone(document.getElementById("dropzoneContacts"), el.fileInputContacts);
     setupDropzone(document.getElementById("dropzoneImage"), el.manualImageInput);
