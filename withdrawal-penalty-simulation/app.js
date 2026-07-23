@@ -531,18 +531,20 @@
     }
     html += '</div>';
 
-    // ---- 비교 차트 (기존상품 만기일 기준 예상 수령액) ----
+    // ---- 비교 차트: 만기까지 유지 시(기준선) 대비 차액을 좌우로 표시 ----
+    // 절대금액은 다 비슷한 수억원대라 0부터 그리면 막대 길이 차이가 잘 안 보이므로,
+    // "기준 대비 얼마나 더/덜 받는지(차액)"를 기준으로 좌우로 벌어지는 막대로 그린다.
     if (rows.length && holdAmountForCompare !== null) {
-      var maxValue = holdAmountForCompare;
-      rows.forEach(function (r) { if (r.maturityAmount > maxValue) maxValue = r.maturityAmount; });
-      if (maxValue > 0) {
-        var refPct = clampPct((holdAmountForCompare / maxValue) * 100);
-        html += '<div class="report-block"><h3>기존상품 만기일(' + formatDateUTC(c.maturity) + ') 기준 예상 수령액 비교</h3>';
-        html += '<p class="chart-caption">점선 = 만기까지 유지 시 예상 수령액 기준선</p>';
-        html += '<div class="compare-chart">';
-        html += chartRow("만기까지 유지", holdAmountForCompare, maxValue, refPct, true, null);
-        rows.forEach(function (r) {
-          html += chartRow(r.label, r.maturityAmount, maxValue, refPct, false, r.diff);
+      var diffRows = rows.filter(function (r) { return r.diff !== null; });
+      if (diffRows.length) {
+        var maxAbsDiff = 0;
+        diffRows.forEach(function (r) { if (Math.abs(r.diff) > maxAbsDiff) maxAbsDiff = Math.abs(r.diff); });
+
+        html += '<div class="report-block"><h3>만기까지 유지 대비 재예치 시 차액</h3>';
+        html += '<p class="chart-caption">기준선(가운데) = 만기까지 유지 시 ' + formatWon(holdAmountForCompare) + ' · 오른쪽(초록) 유리 / 왼쪽(빨강) 불리</p>';
+        html += '<div class="diverging-chart">';
+        diffRows.forEach(function (r) {
+          html += divergeRow(r.label, r.diff, maxAbsDiff);
         });
         html += '</div></div>';
       }
@@ -626,20 +628,18 @@
       '</div>';
   }
 
-  function chartRow(label, value, maxValue, refPct, isBaseline, diff) {
-    var widthPct = clampPct((value / maxValue) * 100);
-    var statusHtml = "";
-    if (!isBaseline && diff !== null) {
-      var good = diff >= 0;
-      statusHtml = '<span class="status-tag ' + (good ? "good" : "critical") + '">' + (good ? "▲ 유리" : "▼ 불리") + '</span>';
-    }
-    return '<div class="chart-row' + (isBaseline ? ' baseline' : '') + '">' +
-      '<div class="row-label">' + escapeHtml(label) + '</div>' +
-      '<div class="bar-track">' +
-        '<div class="chart-refline" style="left:' + refPct + '%"></div>' +
-        '<div class="bar-fill ' + (isBaseline ? "baseline-fill" : "option-fill") + '" style="width:' + widthPct + '%"></div>' +
+  function divergeRow(label, diff, maxAbsDiff) {
+    var pct = maxAbsDiff > 0 ? clampPct((Math.abs(diff) / maxAbsDiff) * 50) : 0;
+    var good = diff >= 0;
+    var barStyle = (good ? "left:50%;" : "right:50%;") + "width:" + pct + "%;";
+    var statusHtml = '<span class="status-tag ' + (good ? "good" : "critical") + '">' + (good ? "▲ 유리" : "▼ 불리") + '</span>';
+    return '<div class="diverge-row">' +
+      '<div class="diverge-label">' + escapeHtml(label) + '</div>' +
+      '<div class="diverge-track">' +
+        '<div class="diverge-zero"></div>' +
+        '<div class="diverge-bar ' + (good ? "good" : "bad") + '" style="' + barStyle + '"></div>' +
       '</div>' +
-      '<div class="row-value"><span class="value-amount">' + formatWon(value) + '</span>' + statusHtml + '</div>' +
+      '<div class="row-value"><span class="value-amount">' + formatSignedWon(diff) + '</span>' + statusHtml + '</div>' +
       '</div>';
   }
 

@@ -532,31 +532,26 @@ footer {
   color: var(--text-muted);
 }
 
-.compare-chart {
+.diverging-chart {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
 
-.chart-row {
+.diverge-row {
   display: grid;
-  grid-template-columns: 92px 1fr auto;
+  grid-template-columns: 60px 1fr auto;
   align-items: center;
   gap: 10px;
 }
 
-.chart-row .row-label {
+.diverge-label {
   font-size: 0.8rem;
   color: var(--text-muted);
   word-break: keep-all;
 }
 
-.chart-row.baseline .row-label {
-  color: var(--text);
-  font-weight: 600;
-}
-
-.bar-track {
+.diverge-track {
   position: relative;
   height: 22px;
   background: var(--table-header-bg);
@@ -565,39 +560,37 @@ footer {
   overflow: hidden;
 }
 
-.bar-fill {
+.diverge-zero {
   position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  border-radius: 4px;
-}
-
-.bar-fill.option-fill {
-  background: linear-gradient(90deg, var(--primary), var(--navy-700));
-  border: 1px solid var(--navy-900);
-}
-
-.bar-fill.baseline-fill {
-  background: var(--text-muted);
-  opacity: 0.45;
-}
-
-.chart-refline {
-  position: absolute;
+  left: 50%;
   top: -1px;
   bottom: -1px;
   width: 0;
-  border-left: 1.5px dashed var(--gold-strong);
+  border-left: 1.5px solid var(--text-muted);
   z-index: 2;
 }
 
-.chart-row .row-value {
+.diverge-bar {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  border-radius: 3px;
+}
+
+.diverge-bar.good {
+  background: var(--success);
+}
+
+.diverge-bar.bad {
+  background: var(--danger);
+}
+
+.diverge-row .row-value {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   gap: 2px;
-  min-width: 92px;
+  min-width: 108px;
 }
 
 .value-amount {
