@@ -20,6 +20,7 @@
 
   var state = {
     rows: [], // { id, label, years, rate }
+    withdrawals: [], // { id, date, amount } — 명세일자 이후 실제 인출 이력
     nextId: 1
   };
 
@@ -38,6 +39,7 @@
       "modeDirect", "modeRatio", "directModeFields", "ratioModeFields",
       "directCancelAmount", "directPenaltyAmount", "appliedRatePct", "ratioModeCalc",
       "cancelAmountResult", "newProductRows", "addProductRow",
+      "withdrawalRows", "addWithdrawalRow", "historySummary",
       "rmName", "rmDept", "rmContact", "printBtn", "resetBtn", "reportContent"
     ].forEach(function (id) { el[id] = $(id); });
   }
@@ -219,6 +221,43 @@
     state.rows.push(Object.assign({ id: state.nextId++, label: "", years: "", rate: "" }, preset || {}));
   }
 
+  // ---------- 중간인출 이력 행 렌더링 ----------
+
+  function renderWithdrawalRows() {
+    el.withdrawalRows.innerHTML = "";
+    state.withdrawals.forEach(function (row) {
+      var wrap = document.createElement("div");
+      wrap.className = "withdrawal-row";
+      wrap.innerHTML =
+        '<input type="text" data-field="date" placeholder="인출일 YYYY.MM.DD" value="' + escapeAttr(row.date) + '" />' +
+        '<input type="text" data-field="amount" placeholder="인출금액(원)" value="' + escapeAttr(row.amount) + '" />' +
+        '<button type="button" class="btn small danger" data-action="delete">삭제</button>';
+
+      var dateInput = wrap.querySelector('[data-field="date"]');
+      var amountInput = wrap.querySelector('[data-field="amount"]');
+      bindDateMask(dateInput, null);
+      bindAmountMask(amountInput);
+
+      wrap.querySelectorAll("input").forEach(function (input) {
+        input.addEventListener("input", function () {
+          row[input.getAttribute("data-field")] = input.value;
+          renderReport();
+        });
+      });
+      wrap.querySelector('[data-action="delete"]').addEventListener("click", function () {
+        state.withdrawals = state.withdrawals.filter(function (r) { return r.id !== row.id; });
+        renderWithdrawalRows();
+        renderReport();
+      });
+
+      el.withdrawalRows.appendChild(wrap);
+    });
+  }
+
+  function addWithdrawalRow() {
+    state.withdrawals.push({ id: state.nextId++, date: "", amount: "" });
+  }
+
   function escapeAttr(str) {
     return String(str === undefined || str === null ? "" : str).replace(/"/g, "&quot;");
   }
@@ -250,6 +289,49 @@
     };
   }
 
+  // 명세일자 이후 실제 인출 이력을 반영해 "오늘 기준 실제 잔액"을 재구성한다.
+  // 보수적으로 인출액은 항상 원금에서 먼저 차감된 것으로 간주한다(=남는 순원금이
+  // 작아지고, 그만큼 이자 비중이 커져서 중도해지 패널티 계산 시 더 낮은 금액이 나온다).
+  function gatherWithdrawalEvents() {
+    return state.withdrawals.map(function (w) {
+      return { date: parseDateUTC(w.date), amount: parseFloat(String(w.amount).replace(/,/g, "")) };
+    }).filter(function (e) {
+      return e.date && !isNaN(e.amount) && e.amount > 0;
+    });
+  }
+
+  function computeHistory(c, events) {
+    if (c.principal === null || c.rate === null || !c.start || !c.today) return null;
+    var r = c.rate / 100;
+    var validEvents = events
+      .filter(function (e) { return e.date.getTime() >= c.start.getTime() && e.date.getTime() <= c.today.getTime(); })
+      .sort(function (a, b) { return a.date.getTime() - b.date.getTime(); });
+
+    var balance = c.principal;
+    var netPrincipal = c.principal;
+    var segStart = c.start;
+
+    validEvents.forEach(function (e) {
+      var segYears = Math.max(0, yearsBetween(segStart, e.date) || 0);
+      balance = Math.max(0, balance * (1 + r * segYears) - e.amount);
+      netPrincipal = Math.max(0, netPrincipal - e.amount);
+      segStart = e.date;
+    });
+
+    var lastYears = Math.max(0, yearsBetween(segStart, c.today) || 0);
+    balance = balance * (1 + r * lastYears);
+
+    var withdrawnTotal = validEvents.reduce(function (s, e) { return s + e.amount; }, 0);
+
+    return {
+      hasEvents: validEvents.length > 0,
+      events: validEvents,
+      balanceToday: balance,
+      netPrincipal: netPrincipal,
+      withdrawnTotal: withdrawnTotal
+    };
+  }
+
   function updatePeriodSummary(c) {
     if (!c.start || !c.maturity || !c.today) {
       el.periodSummary.textContent = "";
@@ -262,7 +344,7 @@
     el.periodSummary.textContent = parts.join(" · ");
   }
 
-  function updateHoldSuggestion(c) {
+  function updateHoldSuggestion(c, history) {
     if (c.principal === null || c.rate === null || c.totalYears === null) {
       el.suggestSimple.textContent = "-";
       el.suggestCompoundYear.textContent = "-";
@@ -270,17 +352,29 @@
       return null;
     }
     var r = c.rate / 100;
-    var t = c.totalYears;
-    var simple = c.principal * (1 + r * t);
-    var compoundYear = c.principal * Math.pow(1 + r, t);
-    var compoundMonth = c.principal * Math.pow(1 + r / 12, 12 * t);
+    var simple, compoundYear, compoundMonth;
+
+    if (history && history.hasEvents) {
+      // 인출 이력이 있으면, 원 원금이 아니라 "오늘 기준 실제 잔액"에서 잔여기간만큼만 굴린다.
+      var base = history.balanceToday;
+      var t2 = c.remainingYearsClamped === null ? 0 : c.remainingYearsClamped;
+      simple = base * (1 + r * t2);
+      compoundYear = base * Math.pow(1 + r, t2);
+      compoundMonth = base * Math.pow(1 + r / 12, 12 * t2);
+    } else {
+      var t = c.totalYears;
+      simple = c.principal * (1 + r * t);
+      compoundYear = c.principal * Math.pow(1 + r, t);
+      compoundMonth = c.principal * Math.pow(1 + r / 12, 12 * t);
+    }
+
     el.suggestSimple.textContent = formatWon(simple);
     el.suggestCompoundYear.textContent = formatWon(compoundYear);
     el.suggestCompoundMonth.textContent = formatWon(compoundMonth);
     return { simple: simple, compoundYear: compoundYear, compoundMonth: compoundMonth };
   }
 
-  function updatePenalty(c) {
+  function updatePenalty(c, history) {
     var mode = el.modeDirect.checked ? "direct" : "ratio";
     el.directModeFields.classList.toggle("hidden", mode !== "direct");
     el.ratioModeFields.classList.toggle("hidden", mode !== "ratio");
@@ -294,11 +388,21 @@
     } else {
       var ratePct = numVal(el.appliedRatePct);
       if (c.principal !== null && c.rate !== null && c.elapsedYears !== null && ratePct !== null) {
-        var preValue = c.principal * (1 + (c.rate / 100) * c.elapsedYears);
-        cancelAmount = c.principal * (1 + (c.rate / 100) * (ratePct / 100) * c.elapsedYears);
+        var preValue, interestPortion, netPrincipal;
+        if (history && history.hasEvents) {
+          preValue = history.balanceToday;
+          netPrincipal = history.netPrincipal;
+          interestPortion = Math.max(0, preValue - netPrincipal);
+        } else {
+          preValue = c.principal * (1 + (c.rate / 100) * c.elapsedYears);
+          netPrincipal = c.principal;
+          interestPortion = preValue - netPrincipal;
+        }
+        cancelAmount = netPrincipal + interestPortion * (ratePct / 100);
         penaltyAmount = preValue - cancelAmount;
         el.ratioModeCalc.textContent =
-          "해지시점 세전평가액(참고) " + formatWon(preValue) + " → 해지패널티 " + formatWon(penaltyAmount) + " → 해지적립금 " + formatWon(cancelAmount);
+          "해지시점 세전평가액(참고) " + formatWon(preValue) + " → 해지패널티 " + formatWon(penaltyAmount) + " → 해지적립금 " + formatWon(cancelAmount) +
+          (history && history.hasEvents ? " (인출 이력 반영, 순원금 " + formatWon(netPrincipal) + ")" : "");
       } else {
         el.ratioModeCalc.textContent = "";
       }
@@ -315,9 +419,22 @@
   function renderReport() {
     var c = gatherCustomer();
     updatePeriodSummary(c);
-    var holdSuggestions = updateHoldSuggestion(c);
+    var history = computeHistory(c, gatherWithdrawalEvents());
+
+    if (el.historySummary) {
+      if (history && history.hasEvents) {
+        el.historySummary.textContent =
+          "인출 이력 " + history.events.length + "건 반영 · 인출총액 " + formatWon(history.withdrawnTotal) +
+          " · 오늘 기준 실제 잔액(세전, 추정) " + formatWon(history.balanceToday) +
+          " (순원금 " + formatWon(history.netPrincipal) + " + 누적이자 " + formatWon(Math.max(0, history.balanceToday - history.netPrincipal)) + ")";
+      } else {
+        el.historySummary.textContent = "";
+      }
+    }
+
+    var holdSuggestions = updateHoldSuggestion(c, history);
     var holdSuggestion = holdSuggestions ? holdSuggestions.simple : null;
-    var penalty = updatePenalty(c);
+    var penalty = updatePenalty(c, history);
     var holdAmount = numVal(el.holdAmount);
     var holdAmountForCompare = holdAmount === null ? holdSuggestion : holdAmount;
 
@@ -397,6 +514,10 @@
     html += kv("명세일자 → 만기일", formatDateUTC(c.start) + " → " + formatDateUTC(c.maturity));
     html += kv("약정금리(연)", formatPct(c.rate));
     html += kv("전체기간 / 경과기간 / 잔여기간", formatYears(c.totalYears) + " / " + formatYears(c.elapsedYears) + " / " + formatYears(c.remainingYears));
+    if (history && history.hasEvents) {
+      html += kv("중간인출 이력", history.events.length + "건, 인출총액 " + formatWon(history.withdrawnTotal));
+      html += kv("오늘 기준 실제 잔액(세전, 추정)", formatWon(history.balanceToday));
+    }
     html += "</div>";
 
     html += '<div class="report-block"><h3>중도해지 시</h3>';
@@ -428,7 +549,9 @@
       html += "</tbody></table></div></div>";
     }
 
-    html += '<p class="report-disclaimer">본 시뮬레이션은 입력하신 정보를 기준으로 한 단리 추정 참고자료이며, 실제 적용금리·세금·수수료 등에 따라 실수령액과 차이가 있을 수 있습니다. 신상품 재예치 금액은 기존상품 만기일까지의 잔여기간에 제안금리를 적용해 환산한 값이며, 상품 자체 만기가 그보다 짧거나 길 경우 이후 재투자 조건은 별도로 확인이 필요합니다. 신상품 제안금리는 안내 시점 기준이며 향후 변동될 수 있습니다.</p>';
+    html += '<p class="report-disclaimer">본 시뮬레이션은 입력하신 정보를 기준으로 한 단리 추정 참고자료이며, 실제 적용금리·세금·수수료 등에 따라 실수령액과 차이가 있을 수 있습니다. 신상품 재예치 금액은 기존상품 만기일까지의 잔여기간에 제안금리를 적용해 환산한 값이며, 상품 자체 만기가 그보다 짧거나 길 경우 이후 재투자 조건은 별도로 확인이 필요합니다. 신상품 제안금리는 안내 시점 기준이며 향후 변동될 수 있습니다.' +
+      (history && history.hasEvents ? ' 중간인출 이력은 인출액이 원금에서 먼저 차감된 것으로 보수적으로 가정해 계산했으며, 정확한 금액은 상품사 확인이 필요합니다.' : '') +
+      '</p>';
 
     if (rm.name || rm.dept || rm.contact) {
       html += '<p class="report-signature">' + [rm.dept, rm.name, rm.contact].filter(Boolean).join(" · ") + "</p>";
@@ -484,6 +607,8 @@
     el.directCancelAmount.value = "";
     el.directPenaltyAmount.value = "";
     el.appliedRatePct.value = "";
+    state.withdrawals = [];
+    renderWithdrawalRows();
     renderReport();
   }
 
@@ -516,6 +641,12 @@
       addRow();
       saveRows();
       renderRows();
+      renderReport();
+    });
+
+    el.addWithdrawalRow.addEventListener("click", function () {
+      addWithdrawalRow();
+      renderWithdrawalRows();
       renderReport();
     });
 
@@ -557,6 +688,7 @@
     el.rmContact.value = rm.contact || "";
 
     renderRows();
+    renderWithdrawalRows();
     bindEvents();
     renderReport();
   }

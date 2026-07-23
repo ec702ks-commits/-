@@ -374,6 +374,36 @@ button:focus-visible {
   font-size: 0.85rem;
 }
 
+.withdrawal-history {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+#withdrawalRows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.withdrawal-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 6px;
+  align-items: center;
+}
+
+.withdrawal-row input {
+  padding: 8px 8px;
+  font-size: 0.88rem;
+}
+
+.withdrawal-row button {
+  padding: 8px 10px;
+  font-size: 0.85rem;
+}
+
 footer {
   text-align: center;
   color: var(--text-muted);
