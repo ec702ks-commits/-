@@ -328,20 +328,35 @@
       .sort(function (a, b) { return a.date.getTime() - b.date.getTime(); });
 
     // "잔액"은 항상 입력한 금액(적립금이든 납입원금이든)에서 출발해 그대로 굴린다.
-    // "순원금"(패널티 계산용, 원금/이자 구분 기준)은 모드에 따라 출발점이 다르다:
+    // "순원금"(패널티 계산 시 원금/이자를 나누는 기준)은 모드에 따라 출발점이 다르다:
     // - 납입원금 모드: 입력한 금액 자체가 순수 원금.
-    // - 적립금 모드: 별도로 입력한 납입원금이 있을 때만 구분 가능(없으면 null = 구분 불가).
-    var netPrincipalBase = c.principalMode === "balance" ? c.contributionPrincipal : c.principal;
-    var trackNetPrincipal = netPrincipalBase !== null && netPrincipalBase !== undefined;
+    // - 적립금 모드 + 납입원금을 알 때: 그 값을 순원금으로 사용(정확).
+    // - 적립금 모드 + 납입원금을 모를 때: 명세일자~오늘 경과기간만큼 적립금을
+    //   거꾸로 할인해서 순원금을 보수적으로 추정한다(연단리/연복리/월복리에
+    //   따라 할인 계산식이 달라진다). 정확한 값을 아는 경우 위 입력칸에
+    //   직접 입력하면 이 추정치보다 우선 적용된다.
+    var netPrincipalEstimated = false;
+    var netPrincipalBase;
+    if (c.principalMode === "balance") {
+      if (c.contributionPrincipal !== null) {
+        netPrincipalBase = c.contributionPrincipal;
+      } else {
+        var elapsedForEstimate = Math.max(0, c.elapsedYears || 0);
+        netPrincipalBase = c.principal / growthFactor(c.method, r, elapsedForEstimate);
+        netPrincipalEstimated = true;
+      }
+    } else {
+      netPrincipalBase = c.principal;
+    }
 
     var balance = c.principal;
-    var netPrincipal = trackNetPrincipal ? netPrincipalBase : null;
+    var netPrincipal = netPrincipalBase;
     var segStart = c.start;
 
     validEvents.forEach(function (e) {
       var segYears = Math.max(0, yearsBetween(segStart, e.date) || 0);
       balance = Math.max(0, balance * growthFactor(c.method, r, segYears) - e.amount);
-      if (trackNetPrincipal) netPrincipal = Math.max(0, netPrincipal - e.amount);
+      netPrincipal = Math.max(0, netPrincipal - e.amount);
       segStart = e.date;
     });
 
@@ -354,7 +369,8 @@
       hasEvents: validEvents.length > 0,
       events: validEvents,
       balanceToday: balance,
-      netPrincipal: netPrincipal, // null이면 원금/이자 구분 불가
+      netPrincipal: netPrincipal,
+      netPrincipalEstimated: netPrincipalEstimated,
       withdrawnTotal: withdrawnTotal
     };
   }
@@ -424,23 +440,14 @@
       if (c.principal !== null && c.rate !== null && c.elapsedYears !== null && ratePct !== null) {
         var preValue = useHistory ? history.balanceToday : c.principal * growthFactor(c.method, c.rate / 100, c.elapsedYears);
         var netPrincipal = useHistory ? history.netPrincipal : c.principal;
+        var netPrincipalEstimated = useHistory && history.netPrincipalEstimated;
 
-        if (netPrincipal === null) {
-          // 적립금 모드인데 납입원금을 모르면 원금/이자를 구분할 수 없어
-          // 적용이율 비율 방식으로는 정확히 계산할 수 없다.
-          cancelAmount = null;
-          penaltyAmount = null;
-          el.ratioModeCalc.textContent =
-            "현재 적립금(" + formatWon(preValue) + ")만으로는 원금과 이자를 구분할 수 없어 적용이율 비율로 정확히 계산하기 어렵습니다. " +
-            "위 \"납입원금(선택)\"을 함께 입력하시거나, \"해지적립금 직접입력\"을 사용해주세요.";
-        } else {
-          var interestPortion = Math.max(0, preValue - netPrincipal);
-          cancelAmount = netPrincipal + interestPortion * (ratePct / 100);
-          penaltyAmount = preValue - cancelAmount;
-          el.ratioModeCalc.textContent =
-            "해지시점 세전평가액(참고) " + formatWon(preValue) + " → 해지패널티 " + formatWon(penaltyAmount) + " → 해지적립금 " + formatWon(cancelAmount) +
-            (useHistory ? " (순원금 " + formatWon(netPrincipal) + " 기준)" : "");
-        }
+        var interestPortion = Math.max(0, preValue - netPrincipal);
+        cancelAmount = netPrincipal + interestPortion * (ratePct / 100);
+        penaltyAmount = preValue - cancelAmount;
+        el.ratioModeCalc.textContent =
+          "해지시점 세전평가액(참고) " + formatWon(preValue) + " → 해지패널티 " + formatWon(penaltyAmount) + " → 해지적립금 " + formatWon(cancelAmount) +
+          " (순원금 " + formatWon(netPrincipal) + (netPrincipalEstimated ? ", 납입원금 미입력으로 추정치 사용" : "") + ")";
       } else {
         el.ratioModeCalc.textContent = "";
       }
@@ -461,9 +468,8 @@
 
     if (el.historySummary) {
       if (history && (history.hasEvents || c.principalMode === "balance")) {
-        var breakdown = history.netPrincipal === null
-          ? ""
-          : " (순원금 " + formatWon(history.netPrincipal) + " + 누적이자 " + formatWon(Math.max(0, history.balanceToday - history.netPrincipal)) + ")";
+        var breakdown = " (순원금" + (history.netPrincipalEstimated ? "(추정)" : "") + " " + formatWon(history.netPrincipal) +
+          " + 누적이자 " + formatWon(Math.max(0, history.balanceToday - history.netPrincipal)) + ")";
         el.historySummary.textContent =
           (history.hasEvents ? "인출 이력 " + history.events.length + "건 반영 · 인출총액 " + formatWon(history.withdrawnTotal) + " · " : "") +
           "오늘 기준 실제 잔액(세전, 추정) " + formatWon(history.balanceToday) + breakdown;
@@ -555,6 +561,8 @@
     html += kv(c.principalMode === "balance" ? "현재 적립금(명세일자 기준)" : "납입원금", formatWon(c.principal));
     if (c.principalMode === "balance" && c.contributionPrincipal !== null) {
       html += kv("납입원금(참고)", formatWon(c.contributionPrincipal));
+    } else if (c.principalMode === "balance" && history && history.netPrincipalEstimated) {
+      html += kv("납입원금(추정)", formatWon(history.netPrincipal));
     }
     html += kv("명세일자 → 만기일", formatDateUTC(c.start) + " → " + formatDateUTC(c.maturity));
     html += kv("약정금리(연) / 이자계산방식", formatPct(c.rate) + " / " + methodLabel(c.method));
@@ -598,6 +606,7 @@
 
     html += '<p class="report-disclaimer">본 시뮬레이션은 입력하신 정보를 기준으로 한 ' + methodLabel(c.method) + ' 추정 참고자료이며, 실제 적용금리·세금·수수료 등에 따라 실수령액과 차이가 있을 수 있습니다. 신상품 재예치 금액은 기존상품 만기일까지의 잔여기간에 제안금리(단리)를 적용해 환산한 값이며, 상품 자체 만기가 그보다 짧거나 길 경우 이후 재투자 조건은 별도로 확인이 필요합니다. 신상품 제안금리는 안내 시점 기준이며 향후 변동될 수 있습니다.' +
       (history && history.hasEvents ? ' 중간인출 이력은 인출액이 원금에서 먼저 차감된 것으로 보수적으로 가정해 계산했으며, 정확한 금액은 상품사 확인이 필요합니다.' : '') +
+      (history && history.netPrincipalEstimated ? ' 납입원금을 별도로 입력하지 않아 현재 적립금을 경과기간만큼 할인해 순원금을 추정했습니다. 정확한 납입원금을 입력하시면 더 정확한 패널티 계산이 가능합니다.' : '') +
       '</p>';
 
     if (rm.name || rm.dept || rm.contact) {
