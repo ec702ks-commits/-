@@ -168,8 +168,13 @@
 
     <div class="send-progress-bar">
       <span id="sendProgressText"></span>
-      <button id="scrollNextBtn" type="button" class="btn small">다음 미발송으로 이동</button>
+      <div class="actions" style="gap: 6px;">
+        <button id="focusModeBtn" type="button" class="btn small">한 명씩 순서대로 보내기</button>
+        <button id="scrollNextBtn" type="button" class="btn small">다음 미발송으로 이동</button>
+      </div>
     </div>
+    <p class="hint">"한 명씩 순서대로 보내기"를 켜면 화면에 미발송 고객 한 명만 크게 표시되고, 보내기를 누를 때마다 같은 위치에 다음 고객이 자동으로 나와서 스크롤/찾기 없이 이어서 보낼 수 있습니다.</p>
+    <p id="focusDoneMsg" class="empty-msg hidden">이 조건에서 미발송 고객이 모두 처리되었습니다 🎉</p>
     <div id="customerList"></div>
   </section>
 

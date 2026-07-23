@@ -15,6 +15,7 @@
     contactsLoading: false,
     targetMonthValue: "",
     manualImageDataUrl: null,
+    focusMode: false,
   };
 
   var FIELD_GUESSES = {
@@ -133,6 +134,8 @@
     el.customerList = document.getElementById("customerList");
     el.sendProgressText = document.getElementById("sendProgressText");
     el.scrollNextBtn = document.getElementById("scrollNextBtn");
+    el.focusModeBtn = document.getElementById("focusModeBtn");
+    el.focusDoneMsg = document.getElementById("focusDoneMsg");
 
     el.filterName = document.getElementById("filterName");
     el.filterStatus = document.getElementById("filterStatus");
@@ -200,6 +203,7 @@
     refreshManualImageUI();
 
     el.scrollNextBtn.addEventListener("click", scrollToNextPending);
+    el.focusModeBtn.addEventListener("click", toggleFocusMode);
 
     el.useStoredContactsBtn.addEventListener("click", function () {
       state.useStoredContacts = true;
@@ -1227,6 +1231,11 @@
       return;
     }
 
+    state.focusMode = false;
+    el.customerList.classList.remove("focus-mode");
+    el.focusModeBtn.textContent = "한 명씩 순서대로 보내기";
+    el.focusDoneMsg.classList.add("hidden");
+
     el.customerList.innerHTML = "";
     state.filtered.forEach(function (customer, idx) {
       var message = renderTemplate(template, customer);
@@ -1271,7 +1280,7 @@
           recordSendHistory(customer, message, "문자");
           updateSendProgress();
           applyListFilters();
-          setTimeout(scrollToNextPending, 400);
+          if (!state.focusMode) setTimeout(scrollToNextPending, 400);
         });
         actions.appendChild(sendLink);
 
@@ -1287,7 +1296,7 @@
           recordSendHistory(customer, message, "카카오톡");
           updateSendProgress();
           applyListFilters();
-          setTimeout(scrollToNextPending, 400);
+          if (!state.focusMode) setTimeout(scrollToNextPending, 400);
         });
         actions.appendChild(kakaoBtn);
       }
@@ -1352,6 +1361,37 @@
 
       item.classList.toggle("hidden-by-filter", !(matchesName && matchesOrg && matchesType && matchesStatus));
     });
+
+    if (state.focusMode) updateFocusView();
+  }
+
+  function toggleFocusMode() {
+    state.focusMode = !state.focusMode;
+    el.customerList.classList.toggle("focus-mode", state.focusMode);
+    el.focusModeBtn.textContent = state.focusMode ? "목록으로 보기" : "한 명씩 순서대로 보내기";
+    if (state.focusMode) {
+      updateFocusView();
+    } else {
+      var cur = el.customerList.querySelector(".focus-current");
+      if (cur) cur.classList.remove("focus-current");
+      el.focusDoneMsg.classList.add("hidden");
+    }
+  }
+
+  function updateFocusView() {
+    var cur = el.customerList.querySelector(".focus-current");
+    if (cur) cur.classList.remove("focus-current");
+
+    var items = el.customerList.querySelectorAll(".customer-item");
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i];
+      if (item.classList.contains("done") || item.classList.contains("missing-phone") || item.classList.contains("hidden-by-filter")) continue;
+      item.classList.add("focus-current");
+      el.focusDoneMsg.classList.add("hidden");
+      item.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+    el.focusDoneMsg.classList.remove("hidden");
   }
 
   function updateSendProgress() {

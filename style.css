@@ -383,6 +383,7 @@ footer {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+  flex-wrap: wrap;
   background: var(--card-bg);
   padding: 10px 0;
   margin: 8px 0 4px;
@@ -391,12 +392,25 @@ footer {
   font-weight: 600;
 }
 
+.send-progress-bar .actions {
+  flex-wrap: wrap;
+}
+
 .customer-item.highlight {
   box-shadow: 0 0 0 3px rgba(26, 86, 219, 0.35);
 }
 
 .customer-item.hidden-by-filter {
   display: none;
+}
+
+#customerList.focus-mode .customer-item {
+  display: none;
+}
+
+#customerList.focus-mode .customer-item.focus-current {
+  display: block;
+  box-shadow: 0 0 0 3px rgba(26, 86, 219, 0.35);
 }
 
 .send-filters {
