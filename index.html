@@ -129,6 +129,18 @@
     <div class="actions" style="justify-content: flex-start; margin-top: 8px;">
       <button id="resetTemplate" type="button" class="btn small">기본값으로 초기화</button>
     </div>
+
+    <div class="upload-block" style="margin-top: 14px;">
+      <p class="upload-label">안내 이미지 (선택 — 카톡으로 보낼 때만 함께 공유됩니다)</p>
+      <input type="file" id="manualImageInput" accept="image/*" class="visually-hidden" />
+      <label for="manualImageInput" class="btn small file-label">이미지 선택</label>
+      <button id="clearManualImage" type="button" class="btn small danger hidden">이미지 삭제</button>
+      <div id="manualImagePreviewWrap" class="hidden" style="margin-top: 8px;">
+        <img id="manualImagePreview" alt="안내 이미지 미리보기" style="max-width: 160px; max-height: 160px; border-radius: 8px; border: 1px solid var(--border);" />
+      </div>
+      <p class="hint">문자(SMS)는 이미지 첨부를 지원하지 않아 텍스트만 발송됩니다. 이미지는 "카톡으로 보내기" 공유 시에만 함께 전달되며, 기기/카카오톡 버전에 따라 지원되지 않을 수 있습니다.</p>
+    </div>
+
     <button id="applyTemplate" class="btn primary">미리보기 생성</button>
   </section>
 

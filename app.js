@@ -14,6 +14,7 @@
     lastContactsPasswordAttempt: null,
     contactsLoading: false,
     targetMonthValue: "",
+    manualImageDataUrl: null,
   };
 
   var FIELD_GUESSES = {
@@ -53,6 +54,8 @@
   var HISTORY_MAX_ENTRIES = 5000;
   var MONTHLY_RATE_KEY = "dcirp_sms_monthly_rate_v1";
   var DEFAULT_OPTION_RATE_KEY = "dcirp_sms_default_option_rate_v1";
+  var MANUAL_IMAGE_KEY = "dcirp_sms_manual_image_v1";
+  var MANUAL_IMAGE_MAX_BYTES = 3 * 1024 * 1024;
 
   var DEFAULT_TEMPLATE =
     "{이름} 고객님 안녕하십니까\n" +
@@ -123,6 +126,10 @@
     el.defaultOptionRate = document.getElementById("defaultOptionRate");
     el.applyTemplate = document.getElementById("applyTemplate");
     el.resetTemplateBtn = document.getElementById("resetTemplate");
+    el.manualImageInput = document.getElementById("manualImageInput");
+    el.clearManualImageBtn = document.getElementById("clearManualImage");
+    el.manualImagePreviewWrap = document.getElementById("manualImagePreviewWrap");
+    el.manualImagePreview = document.getElementById("manualImagePreview");
     el.customerList = document.getElementById("customerList");
     el.sendProgressText = document.getElementById("sendProgressText");
     el.scrollNextBtn = document.getElementById("scrollNextBtn");
@@ -144,6 +151,7 @@
     el.templateInput.value = localStorage.getItem(TEMPLATE_STORAGE_KEY) || DEFAULT_TEMPLATE;
     el.monthlyRate.value = localStorage.getItem(MONTHLY_RATE_KEY) || "";
     el.defaultOptionRate.value = localStorage.getItem(DEFAULT_OPTION_RATE_KEY) || "";
+    state.manualImageDataUrl = localStorage.getItem(MANUAL_IMAGE_KEY) || null;
 
     var now = new Date();
     el.targetMonth.value = now.getFullYear() + "-" + String(now.getMonth() + 1).padStart(2, "0");
@@ -173,6 +181,15 @@
       if (!confirm("지금 작성 중인 문구를 지우고 기본 문구로 되돌릴까요?")) return;
       el.templateInput.value = DEFAULT_TEMPLATE;
     });
+
+    el.manualImageInput.addEventListener("change", handleManualImageSelect);
+    el.clearManualImageBtn.addEventListener("click", function () {
+      localStorage.removeItem(MANUAL_IMAGE_KEY);
+      state.manualImageDataUrl = null;
+      refreshManualImageUI();
+    });
+    refreshManualImageUI();
+
     el.scrollNextBtn.addEventListener("click", scrollToNextPending);
 
     el.useStoredContactsBtn.addEventListener("click", function () {
@@ -1010,8 +1027,64 @@
     return "sms:" + digits + separator + "body=" + encodeURIComponent(message);
   }
 
+  function refreshManualImageUI() {
+    if (state.manualImageDataUrl) {
+      el.manualImagePreview.src = state.manualImageDataUrl;
+      el.manualImagePreviewWrap.classList.remove("hidden");
+      el.clearManualImageBtn.classList.remove("hidden");
+    } else {
+      el.manualImagePreview.src = "";
+      el.manualImagePreviewWrap.classList.add("hidden");
+      el.clearManualImageBtn.classList.add("hidden");
+    }
+  }
+
+  function handleManualImageSelect(evt) {
+    var file = evt.target.files && evt.target.files[0];
+    if (!file) return;
+    if (file.size > MANUAL_IMAGE_MAX_BYTES) {
+      alert("이미지 용량이 너무 큽니다 (최대 3MB). 더 작은 이미지를 선택해주세요.");
+      evt.target.value = "";
+      return;
+    }
+    var reader = new FileReader();
+    reader.onload = function () {
+      var dataUrl = reader.result;
+      try {
+        localStorage.setItem(MANUAL_IMAGE_KEY, dataUrl);
+      } catch (e) {
+        alert("이미지 저장에 실패했습니다 (용량 초과일 수 있습니다). 더 작은 이미지를 사용해주세요.");
+        evt.target.value = "";
+        return;
+      }
+      state.manualImageDataUrl = dataUrl;
+      refreshManualImageUI();
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function dataUrlToBlob(dataUrl) {
+    var parts = dataUrl.split(",");
+    var mimeMatch = parts[0].match(/data:(.*?);base64/);
+    var mime = mimeMatch ? mimeMatch[1] : "image/jpeg";
+    var binary = atob(parts[1]);
+    var bytes = new Uint8Array(binary.length);
+    for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new Blob([bytes], { type: mime });
+  }
+
   function shareViaKakao(message) {
     if (navigator.share) {
+      if (state.manualImageDataUrl) {
+        try {
+          var blob = dataUrlToBlob(state.manualImageDataUrl);
+          var file = new File([blob], "안내이미지.jpg", { type: blob.type || "image/jpeg" });
+          if (navigator.canShare && navigator.canShare({ files: [file], text: message })) {
+            navigator.share({ text: message, files: [file] }).catch(function () {});
+            return;
+          }
+        } catch (e) {}
+      }
       navigator.share({ text: message }).catch(function () {});
       return;
     }
