@@ -430,8 +430,34 @@ footer {
 
 /* ---- 결과 요약(리포트) ---- */
 
+/* 결과 요약(리포트)은 고객에게 보여주거나 PDF로 인쇄되는 "문서"이므로,
+   기기의 다크모드 설정과 무관하게 항상 밝은 문서 색상으로 고정한다.
+   (PDF 변환기에 따라 @media print이 인식되지 않거나 다크모드 배경이
+   그대로 인쇄되는 경우가 있어, 미디어쿼리에 의존하지 않고 이 안에서
+   쓰는 모든 색상 토큰 자체를 여기서 다시 고정값으로 덮어쓴다.) */
 #reportSection {
   font-size: 0.92rem;
+  --navy-900: #0b1f3d;
+  --navy-700: #123a72;
+  --primary: #1c5cab;
+  --gold: #b8892b;
+  --gold-strong: #96701e;
+  --gold-soft: #f5ead0;
+  --bg: #ffffff;
+  --card-bg: #ffffff;
+  --input-bg: #ffffff;
+  --btn-bg: #eef1f6;
+  --table-header-bg: #f5f7fb;
+  --tile-bg: #f7f9fc;
+  --border: #dde2ea;
+  --text: #131b2b;
+  --text-muted: #5c6576;
+  --success: #0ca30c;
+  --danger: #d03b3b;
+  --badge-better-bg: #e3f6e3;
+  --badge-worse-bg: #fbe6e6;
+  background: #ffffff;
+  color: #131b2b;
 }
 
 .report-banner {
@@ -532,82 +558,64 @@ footer {
   color: var(--text-muted);
 }
 
-.diverging-chart {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+.line-chart-container {
+  width: 100%;
+  overflow-x: auto;
 }
 
-.diverge-row {
-  display: grid;
-  grid-template-columns: 60px 1fr auto;
-  align-items: center;
-  gap: 10px;
+.line-chart-svg {
+  width: 100%;
+  height: auto;
+  min-width: 420px;
+  display: block;
+  font-family: inherit;
 }
 
-.diverge-label {
-  font-size: 0.8rem;
-  color: var(--text-muted);
-  word-break: keep-all;
+.lc-grid {
+  stroke: var(--border);
+  stroke-width: 1;
 }
 
-.diverge-track {
-  position: relative;
-  height: 22px;
-  background: var(--table-header-bg);
-  border: 1px solid var(--border);
-  border-radius: 5px;
-  overflow: hidden;
+.lc-axis-label {
+  fill: var(--text-muted);
+  font-size: 9.5px;
 }
 
-.diverge-zero {
-  position: absolute;
-  left: 50%;
-  top: -1px;
-  bottom: -1px;
-  width: 0;
-  border-left: 1.5px solid var(--text-muted);
-  z-index: 2;
+.lc-line {
+  fill: none;
+  stroke-width: 2.2;
 }
 
-.diverge-bar {
-  position: absolute;
-  top: 1px;
-  bottom: 1px;
-  border-radius: 3px;
+.lc-line-maintain {
+  stroke: var(--text-muted);
+  stroke-dasharray: 5 4;
 }
 
-.diverge-bar.good {
-  background: var(--success);
+.lc-line-product {
+  stroke: var(--primary);
 }
 
-.diverge-bar.bad {
-  background: var(--danger);
+.lc-dot-maintain {
+  fill: var(--text-muted);
 }
 
-.diverge-row .row-value {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 2px;
-  min-width: 108px;
+.lc-dot-product {
+  fill: var(--primary);
 }
 
-.value-amount {
+.lc-end-label {
+  font-size: 10.5px;
   font-weight: 700;
-  font-size: 0.86rem;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
 }
 
-.status-tag {
-  font-size: 0.72rem;
-  font-weight: 700;
-  white-space: nowrap;
+.lc-end-label-maintain {
+  fill: var(--text);
 }
 
-.status-tag.good { color: var(--success); }
-.status-tag.critical { color: var(--danger); }
+.lc-end-label-product {
+  fill: var(--navy-900);
+}
+
 
 .report-kv {
   display: flex;
