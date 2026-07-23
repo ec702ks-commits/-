@@ -626,7 +626,8 @@
     function bindSuggestUse(button, key) {
       button.addEventListener("click", function () {
         var c = gatherCustomer();
-        var s = updateHoldSuggestion(c);
+        var history = computeHistory(c, gatherWithdrawalEvents());
+        var s = updateHoldSuggestion(c, history);
         if (s && s[key] !== null && !isNaN(s[key])) {
           setAmountValue(el.holdAmount, s[key]);
           renderReport();
