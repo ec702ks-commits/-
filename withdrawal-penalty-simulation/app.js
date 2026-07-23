@@ -35,7 +35,6 @@
       "customerName", "principal", "contributionPrincipal",
       "startDate", "maturityDate", "contractRate", "interestMethod", "todayDate",
       "periodSummary", "holdAmount",
-      "suggestMainLabel", "suggestMain", "useSuggestMain", "methodNote",
       "suggestSimple", "suggestCompoundYear", "suggestCompoundMonth",
       "modeDirect", "modeRatio", "directModeFields", "ratioModeFields",
       "directCancelAmount", "directPenaltyAmount", "appliedRatePct", "ratioModeCalc",
@@ -387,34 +386,32 @@
     el.periodSummary.textContent = parts.join(" · ");
   }
 
-  function updateHoldSuggestion(c, history) {
+  // 세 방식(연단리/연복리/월복리) 각각 "그 방식으로 전부 일관되게 계산했을 때"의
+  // 만기 예상 수령액을 따로 구한다. 그래야 화면에 보이는 참고값과, 그 값을
+  // "사용" 눌러서 채웠을 때 실제로 들어가는 값이 항상 서로 일치한다.
+  function updateHoldSuggestion(c) {
     if (c.principal === null || c.rate === null || c.totalYears === null) {
-      el.suggestMain.textContent = "-";
       el.suggestSimple.textContent = "-";
       el.suggestCompoundYear.textContent = "-";
       el.suggestCompoundMonth.textContent = "-";
       return null;
     }
-    var r = c.rate / 100;
-    // 입력한 금액은 "명세일자 기준 현재 적립금"이므로, 원 원금을 전체기간
-    // 그대로 굴리는 게 아니라 "오늘 기준 실제 잔액"에서 잔여기간만큼만 굴린다.
-    var base = history ? history.balanceToday : c.principal;
+    var events = gatherWithdrawalEvents();
     var t = c.remainingYearsClamped === null ? 0 : c.remainingYearsClamped;
+    var results = {};
 
-    var simple = base * growthFactor("simple", r, t);
-    var compoundYear = base * growthFactor("compoundYear", r, t);
-    var compoundMonth = base * growthFactor("compoundMonth", r, t);
-    var main = base * growthFactor(c.method, r, t);
+    ["simple", "compoundYear", "compoundMonth"].forEach(function (m) {
+      var cForMethod = Object.assign({}, c, { method: m });
+      var hForMethod = computeHistory(cForMethod, events);
+      var base = hForMethod ? hForMethod.balanceToday : c.principal;
+      results[m] = base * growthFactor(m, c.rate / 100, t);
+    });
 
-    var label = methodLabel(c.method);
-    el.suggestMainLabel.textContent = label;
-    el.suggestMain.textContent = formatWon(main);
-    if (el.methodNote) el.methodNote.textContent = label;
-    el.suggestSimple.textContent = formatWon(simple);
-    el.suggestCompoundYear.textContent = formatWon(compoundYear);
-    el.suggestCompoundMonth.textContent = formatWon(compoundMonth);
+    el.suggestSimple.textContent = formatWon(results.simple);
+    el.suggestCompoundYear.textContent = formatWon(results.compoundYear);
+    el.suggestCompoundMonth.textContent = formatWon(results.compoundMonth);
 
-    return { simple: simple, compoundYear: compoundYear, compoundMonth: compoundMonth, main: main };
+    return results;
   }
 
   function updatePenalty(c, history) {
@@ -472,7 +469,7 @@
       }
     }
 
-    var holdSuggestions = updateHoldSuggestion(c, history);
+    var holdSuggestions = updateHoldSuggestion(c);
     var holdSuggestion = holdSuggestions ? holdSuggestions.simple : null;
     var penalty = updatePenalty(c, history);
     var holdAmount = numVal(el.holdAmount);
@@ -689,18 +686,18 @@
       });
     });
 
-    function bindSuggestUse(button, key) {
+    document.querySelectorAll(".suggest-use-btn").forEach(function (button) {
+      var method = button.getAttribute("data-method");
       button.addEventListener("click", function () {
+        el.interestMethod.value = method;
         var c = gatherCustomer();
-        var history = computeHistory(c, gatherWithdrawalEvents());
-        var s = updateHoldSuggestion(c, history);
-        if (s && s[key] !== null && !isNaN(s[key])) {
-          setAmountValue(el.holdAmount, s[key]);
+        var s = updateHoldSuggestion(c);
+        if (s && s[method] !== null && !isNaN(s[method])) {
+          setAmountValue(el.holdAmount, s[method]);
           renderReport();
         }
       });
-    }
-    bindSuggestUse(el.useSuggestMain, "main");
+    });
 
     el.addProductRow.addEventListener("click", function () {
       addRow();

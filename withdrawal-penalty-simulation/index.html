@@ -80,14 +80,24 @@
         <input type="text" id="holdAmount" placeholder="시스템 조회값 또는 아래 참고값 사용" />
       </label>
     </div>
+    <p class="hint">아래에서 이자계산방식을 골라 사용하세요(기본값 연복리). 고르면 1번의 "이자계산방식"도 함께 바뀌어, 해지 시 패널티 계산에도 같은 방식이 일관되게 적용됩니다.</p>
     <div class="suggest-list">
       <div class="suggest-row">
-        <span class="suggest-label" id="suggestMainLabel">연복리</span>
-        <span class="suggest-value" id="suggestMain">-</span>
-        <button type="button" id="useSuggestMain" class="btn small">사용</button>
+        <span class="suggest-label">연단리</span>
+        <span class="suggest-value" id="suggestSimple">-</span>
+        <button type="button" class="btn small suggest-use-btn" data-method="simple">사용</button>
+      </div>
+      <div class="suggest-row">
+        <span class="suggest-label">연복리</span>
+        <span class="suggest-value" id="suggestCompoundYear">-</span>
+        <button type="button" class="btn small suggest-use-btn" data-method="compoundYear">사용</button>
+      </div>
+      <div class="suggest-row">
+        <span class="suggest-label">월복리</span>
+        <span class="suggest-value" id="suggestCompoundMonth">-</span>
+        <button type="button" class="btn small suggest-use-btn" data-method="compoundMonth">사용</button>
       </div>
     </div>
-    <p class="hint">1번에서 고른 "이자계산방식"(<span id="methodNote">연복리</span>) 기준 참고값입니다. 참고: 연단리 <span id="suggestSimple">-</span> · 월복리 <span id="suggestCompoundMonth">-</span> · 연복리 <span id="suggestCompoundYear">-</span></p>
   </section>
 
   <section class="card no-print" id="penaltySection">
