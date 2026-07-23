@@ -20,9 +20,22 @@
       <label>고객명(또는 단체명) — 선택
         <input type="text" id="customerName" placeholder="예: 홍길동 고객님 / OO주식회사" />
       </label>
-      <label>가입원금(원)
+
+      <div class="radio-row">
+        <label><input type="radio" name="principalMode" id="principalModeBalance" value="balance" checked /> 현재 적립금(이자 포함) 입력</label>
+        <label><input type="radio" name="principalMode" id="principalModeContribution" value="contribution" /> 납입원금만 입력</label>
+      </div>
+
+      <label><span id="principalLabel">현재 적립금(원)</span>
         <input type="text" id="principal" placeholder="예: 100,000,000" />
       </label>
+
+      <div id="contributionPrincipalField">
+        <label>납입원금(선택 — 알고 있으면 해지패널티 계산이 더 정확해집니다)
+          <input type="text" id="contributionPrincipal" />
+        </label>
+      </div>
+
       <div class="two-col">
         <label>명세일자
           <input type="text" id="startDate" />
