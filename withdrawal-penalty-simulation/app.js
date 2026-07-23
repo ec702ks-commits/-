@@ -32,9 +32,7 @@
 
   function cacheEls() {
     [
-      "customerName", "principal", "principalLabel",
-      "principalModeBalance", "principalModeContribution",
-      "contributionPrincipalField", "contributionPrincipal",
+      "customerName", "principal", "contributionPrincipal",
       "startDate", "maturityDate", "contractRate", "interestMethod", "todayDate",
       "periodSummary", "holdAmount",
       "suggestMainLabel", "suggestMain", "useSuggestMain", "methodNote",
@@ -102,8 +100,16 @@
     return new Date(date.getTime() + days * 86400000);
   }
 
+  // 달력 기준으로 정확히 N년 뒤(예: 2025.12.31 + 5년 = 2030.12.31)를 계산한다.
+  // 소수 기간(예: 2.5년)은 정수년만큼 달력으로 이동한 뒤 나머지를 일수로 근사한다.
   function addYears(date, years) {
-    return addDaysUTC(date, Math.round(years * 365));
+    var wholeYears = years >= 0 ? Math.floor(years) : Math.ceil(years);
+    var fraction = years - wholeYears;
+    var result = new Date(Date.UTC(date.getUTCFullYear() + wholeYears, date.getUTCMonth(), date.getUTCDate()));
+    if (fraction !== 0) {
+      result = addDaysUTC(result, Math.round(fraction * 365));
+    }
+    return result;
   }
 
   function yearsBetween(d1, d2) {
@@ -292,8 +298,7 @@
     var rate = numVal(el.contractRate);
     var method = el.interestMethod.value || "compoundYear";
     var today = parseDateUTC(el.todayDate.value);
-    var principalMode = el.principalModeContribution.checked ? "contribution" : "balance";
-    var contributionPrincipal = principalMode === "balance" ? numVal(el.contributionPrincipal) : null;
+    var contributionPrincipal = numVal(el.contributionPrincipal);
 
     var totalYears = yearsBetween(start, maturity);
     var elapsedYears = yearsBetween(start, today);
@@ -302,7 +307,7 @@
     return {
       customerName: el.customerName.value.trim(),
       principal: principal, start: start, maturity: maturity, rate: rate, method: method, today: today,
-      principalMode: principalMode, contributionPrincipal: contributionPrincipal,
+      contributionPrincipal: contributionPrincipal,
       totalYears: totalYears, elapsedYears: elapsedYears, remainingYears: remainingYears,
       remainingYearsClamped: remainingYears === null ? null : Math.max(0, remainingYears),
       valid: principal !== null && start && maturity && rate !== null && today
@@ -327,26 +332,21 @@
       .filter(function (e) { return e.date.getTime() >= c.start.getTime() && e.date.getTime() <= c.today.getTime(); })
       .sort(function (a, b) { return a.date.getTime() - b.date.getTime(); });
 
-    // "잔액"은 항상 입력한 금액(적립금이든 납입원금이든)에서 출발해 그대로 굴린다.
-    // "순원금"(패널티 계산 시 원금/이자를 나누는 기준)은 모드에 따라 출발점이 다르다:
-    // - 납입원금 모드: 입력한 금액 자체가 순수 원금.
-    // - 적립금 모드 + 납입원금을 알 때: 그 값을 순원금으로 사용(정확).
-    // - 적립금 모드 + 납입원금을 모를 때: 명세일자~오늘 경과기간만큼 적립금을
-    //   거꾸로 할인해서 순원금을 보수적으로 추정한다(연단리/연복리/월복리에
-    //   따라 할인 계산식이 달라진다). 정확한 값을 아는 경우 위 입력칸에
-    //   직접 입력하면 이 추정치보다 우선 적용된다.
+    // "잔액"은 입력한 현재 적립금에서 출발해 그대로 굴린다.
+    // "순원금"(패널티 계산 시 원금/이자를 나누는 기준)은:
+    // - 납입원금(선택)을 입력했으면 그 값을 그대로 사용(정확).
+    // - 입력하지 않았으면 명세일자~오늘 경과기간만큼 적립금을 거꾸로
+    //   할인해서 순원금을 보수적으로 추정한다(연단리/연복리/월복리에
+    //   따라 할인 계산식이 달라진다). 납입원금을 입력하면 이 추정치보다
+    //   항상 우선 적용된다.
     var netPrincipalEstimated = false;
     var netPrincipalBase;
-    if (c.principalMode === "balance") {
-      if (c.contributionPrincipal !== null) {
-        netPrincipalBase = c.contributionPrincipal;
-      } else {
-        var elapsedForEstimate = Math.max(0, c.elapsedYears || 0);
-        netPrincipalBase = c.principal / growthFactor(c.method, r, elapsedForEstimate);
-        netPrincipalEstimated = true;
-      }
+    if (c.contributionPrincipal !== null) {
+      netPrincipalBase = c.contributionPrincipal;
     } else {
-      netPrincipalBase = c.principal;
+      var elapsedForEstimate = Math.max(0, c.elapsedYears || 0);
+      netPrincipalBase = c.principal / growthFactor(c.method, r, elapsedForEstimate);
+      netPrincipalEstimated = true;
     }
 
     var balance = c.principal;
@@ -396,15 +396,10 @@
       return null;
     }
     var r = c.rate / 100;
-    var base = c.principal;
-    var t = c.totalYears;
-
-    if (history && (c.principalMode === "balance" || history.hasEvents)) {
-      // 적립금 모드이거나 인출 이력이 있으면, 원래 원금이 아니라
-      // "오늘 기준 실제 잔액"에서 잔여기간만큼만 굴린다.
-      base = history.balanceToday;
-      t = c.remainingYearsClamped === null ? 0 : c.remainingYearsClamped;
-    }
+    // 입력한 금액은 "명세일자 기준 현재 적립금"이므로, 원 원금을 전체기간
+    // 그대로 굴리는 게 아니라 "오늘 기준 실제 잔액"에서 잔여기간만큼만 굴린다.
+    var base = history ? history.balanceToday : c.principal;
+    var t = c.remainingYearsClamped === null ? 0 : c.remainingYearsClamped;
 
     var simple = base * growthFactor("simple", r, t);
     var compoundYear = base * growthFactor("compoundYear", r, t);
@@ -435,12 +430,11 @@
       penaltyAmount = numVal(el.directPenaltyAmount);
     } else {
       var ratePct = numVal(el.appliedRatePct);
-      var useHistory = history && (c.principalMode === "balance" || history.hasEvents);
 
-      if (c.principal !== null && c.rate !== null && c.elapsedYears !== null && ratePct !== null) {
-        var preValue = useHistory ? history.balanceToday : c.principal * growthFactor(c.method, c.rate / 100, c.elapsedYears);
-        var netPrincipal = useHistory ? history.netPrincipal : c.principal;
-        var netPrincipalEstimated = useHistory && history.netPrincipalEstimated;
+      if (c.principal !== null && c.rate !== null && c.elapsedYears !== null && ratePct !== null && history) {
+        var preValue = history.balanceToday;
+        var netPrincipal = history.netPrincipal;
+        var netPrincipalEstimated = history.netPrincipalEstimated;
 
         var interestPortion = Math.max(0, preValue - netPrincipal);
         cancelAmount = netPrincipal + interestPortion * (ratePct / 100);
@@ -467,7 +461,7 @@
     var history = computeHistory(c, gatherWithdrawalEvents());
 
     if (el.historySummary) {
-      if (history && (history.hasEvents || c.principalMode === "balance")) {
+      if (history) {
         var breakdown = " (순원금" + (history.netPrincipalEstimated ? "(추정)" : "") + " " + formatWon(history.netPrincipal) +
           " + 누적이자 " + formatWon(Math.max(0, history.balanceToday - history.netPrincipal)) + ")";
         el.historySummary.textContent =
@@ -555,13 +549,13 @@
     }
 
     // ---- 상세 정보 ----
-    var usingHistoryDisplay = history && (c.principalMode === "balance" || history.hasEvents);
+    var usingHistoryDisplay = !!history;
 
     html += '<div class="report-block"><h3>기존상품 정보</h3>';
-    html += kv(c.principalMode === "balance" ? "현재 적립금(명세일자 기준)" : "납입원금", formatWon(c.principal));
-    if (c.principalMode === "balance" && c.contributionPrincipal !== null) {
+    html += kv("현재 적립금(명세일자 기준)", formatWon(c.principal));
+    if (c.contributionPrincipal !== null) {
       html += kv("납입원금(참고)", formatWon(c.contributionPrincipal));
-    } else if (c.principalMode === "balance" && history && history.netPrincipalEstimated) {
+    } else if (history && history.netPrincipalEstimated) {
       html += kv("납입원금(추정)", formatWon(history.netPrincipal));
     }
     html += kv("명세일자 → 만기일", formatDateUTC(c.start) + " → " + formatDateUTC(c.maturity));
@@ -654,9 +648,7 @@
   function resetCustomerFields() {
     el.customerName.value = "";
     el.principal.value = "";
-    el.principalModeBalance.checked = true;
     el.contributionPrincipal.value = "";
-    updatePrincipalModeUI();
     el.startDate.value = "";
     el.maturityDate.value = "";
     el.contractRate.value = "";
@@ -672,26 +664,12 @@
     renderReport();
   }
 
-  function updatePrincipalModeUI() {
-    var isBalance = el.principalModeBalance.checked;
-    el.principalLabel.textContent = isBalance ? "현재 적립금(원)" : "납입원금(원)";
-    el.principal.placeholder = isBalance ? "예: 100,000,000" : "예: 100,000,000";
-    el.contributionPrincipalField.classList.toggle("hidden", !isBalance);
-  }
-
   function bindEvents() {
     [
       "customerName", "principal", "contributionPrincipal", "startDate", "maturityDate", "contractRate", "todayDate",
       "holdAmount", "directCancelAmount", "directPenaltyAmount", "appliedRatePct"
     ].forEach(function (id) {
       el[id].addEventListener("input", renderReport);
-    });
-
-    [el.principalModeBalance, el.principalModeContribution].forEach(function (radio) {
-      radio.addEventListener("change", function () {
-        updatePrincipalModeUI();
-        renderReport();
-      });
     });
 
     el.interestMethod.addEventListener("change", renderReport);
@@ -764,7 +742,6 @@
     el.todayDate.value = formatDateUTC(todayLocalDate());
 
     [el.principal, el.contributionPrincipal, el.holdAmount, el.directCancelAmount, el.directPenaltyAmount].forEach(bindAmountMask);
-    updatePrincipalModeUI();
 
     state.rows = loadRows().map(function (r) {
       return { id: state.nextId++, label: r.label, years: r.years, rate: r.rate };
