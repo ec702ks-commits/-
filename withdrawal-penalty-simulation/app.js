@@ -816,7 +816,12 @@
   // 찾아서, 데이터행 하나당 기존상품 한 건으로 처리한다(행이 여러 개면 상품카드도 여러 개로 자동 추가).
   var TABLE_HEADER_FIELD_SPECS = [
     { field: "label", type: "text", displayLabel: "상품명", headers: ["상품명"] },
-    { field: "startDate", type: "date", displayLabel: "명세일자", headers: ["명세일자", "기준일자", "산출기준일"] },
+    // "명세일자"는 계약(명세) 체결일 — 상품명의 기간과 더해 만기일을 계산하는 용도로만 쓰고,
+    // 계산기의 "명세일자" 입력칸에는 넣지 않는다(적립금의 산정 기준일과 다를 수 있어서 그대로
+    // 넣으면 오늘까지의 경과이자가 이중으로 계산되는 문제가 있었다). 계산기 입력칸에는 아래
+    // "asOfDate"(적립금기준일자)를 사용한다.
+    { field: "contractDate", type: "date", displayLabel: "명세일자(계약일)", headers: ["명세일자"] },
+    { field: "asOfDate", type: "date", displayLabel: "적립금기준일자", headers: ["적립금기준일자", "평가기준일", "기준일자", "산출기준일"] },
     { field: "maturityDate", type: "date", displayLabel: "만기일", headers: ["만기일자", "만기일"] },
     { field: "principal", type: "amount", displayLabel: "현재 적립금", headers: ["적립금", "현재적립금", "평가금액"] },
     { field: "contributionPrincipal", type: "amount", displayLabel: "납입원금", headers: ["납입원금", "납입원본", "가입원금"] },
@@ -896,15 +901,18 @@
   }
 
   // 표 형식 자료(당사 시스템 자료)를 상품카드에 적용한다. 만기일 컬럼이 없어도
-  // 상품명에 "OO년"처럼 기간이 들어있으면 명세일자 + 기간으로 만기일을 자동 계산하고,
-  // 보험사 상품은 관행상 월복리로 계산하므로 이자계산방식을 월복리로 맞춘다.
+  // 상품명에 "OO년"처럼 기간이 들어있으면 "명세일자(계약일)" + 기간으로 만기일을 자동 계산한다.
+  // 계산기의 "명세일자" 입력칸에는 계약일이 아니라 "적립금기준일자"를 넣는다 — 적립금 값
+  // 자체가 이미 그 날짜(대개 오늘) 기준이므로, 계약일을 넣으면 그 사이 기간만큼 이자가
+  // 이중으로 계산돼 "오늘 기준 잔액"과 "만기 예상액"이 부풀려지는 문제가 있었다.
+  // 당사 보험 상품은 만기 예상액(만기까지 유지 시) 계산에 연복리를 적용한다.
   function applyTableRecordToProduct(targetProduct, rec) {
     var extracted = tableRecordToExtracted(rec);
 
-    if (!extracted.maturityDate && extracted.label && extracted.startDate) {
+    if (!extracted.maturityDate && extracted.label && extracted.contractDate) {
       var years = inferTermYearsFromLabel(extracted.label.value);
       if (years) {
-        var startD = parseDateUTC(extracted.startDate.value);
+        var startD = parseDateUTC(extracted.contractDate.value);
         if (startD) {
           extracted.maturityDate = {
             label: "만기일(상품명 기간 " + years + "년 기준 자동계산)",
@@ -914,11 +922,16 @@
       }
     }
 
+    // 적립금기준일자 컬럼이 없는 파일은 명세일자를 대신 적립금 기준일로 사용(하위 호환).
+    if (!extracted.asOfDate && extracted.contractDate) {
+      extracted.asOfDate = extracted.contractDate;
+    }
+
     var applied = applyExtractedFields(targetProduct, extracted);
 
-    if (targetProduct.refs.methodSelect.value !== "compoundMonth") {
-      targetProduct.refs.methodSelect.value = "compoundMonth";
-      applied.push({ field: "method", label: "이자계산방식(보험사 상품 기본값)", display: "월복리" });
+    if (targetProduct.refs.methodSelect.value !== "compoundYear") {
+      targetProduct.refs.methodSelect.value = "compoundYear";
+      applied.push({ field: "method", label: "이자계산방식(보험사 상품 기본값)", display: "연복리" });
     }
 
     return applied;
@@ -931,6 +944,7 @@
       principal: refs.principalInput,
       contributionPrincipal: refs.contributionPrincipalInput,
       startDate: refs.startDateInput,
+      asOfDate: refs.startDateInput,
       maturityDate: refs.maturityDateInput,
       contractRate: refs.contractRateInput,
       directCancelAmount: refs.directCancelAmountInput,
@@ -941,7 +955,7 @@
       var input = fieldToInput[field];
       if (!input) return;
       var item = extracted[field];
-      if (field === "startDate" || field === "maturityDate" || field === "contractRate" || field === "label") {
+      if (field === "startDate" || field === "asOfDate" || field === "maturityDate" || field === "contractRate" || field === "label") {
         input.value = item.value;
       } else {
         setAmountValue(input, item.value);
