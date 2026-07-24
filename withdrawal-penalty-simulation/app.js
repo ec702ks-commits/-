@@ -334,7 +334,7 @@
   // ---------- 기존상품(명세) : 여러 건 지원 ----------
 
   function createProduct() {
-    return { id: state.nextId++, withdrawals: [], refs: {} };
+    return { id: state.nextId++, withdrawals: [], attachments: [], refs: {} };
   }
 
   // 상품 카드는 추가될 때 딱 한 번만 DOM에 생성되고, 이후 renderReport()가
@@ -441,6 +441,13 @@
           '<p class="hint" data-role="ratioModeCalc"></p>' +
         '</div>' +
         '<p class="result-line">해지적립금(재예치 원금): <strong data-role="cancelAmountResult">-</strong></p>' +
+      '</div>' +
+
+      '<div class="product-subsection">' +
+        '<h4>해지패널티 계산 자료 첨부(선택)</h4>' +
+        '<p class="hint">당사 시스템에서 나오는 해지패널티 계산 화면을 캡처/촬영해서 첨부하면, 아래 결과 요약과 PDF에 그대로 포함됩니다. 이미지 파일(스크린샷, 사진)만 지원하며, 여러 장 첨부할 수 있습니다. 파일은 서버로 전송되지 않고 이 화면 안에서만 처리됩니다.</p>' +
+        '<input type="file" accept="image/*" data-field="attachmentFile" />' +
+        '<div class="attachment-list" data-role="attachmentList"></div>' +
       '</div>'
     );
   }
@@ -512,6 +519,8 @@
     refs.appliedRatePctInput = wrap.querySelector('[data-field="appliedRatePct"]');
     refs.ratioModeCalcEl = wrap.querySelector('[data-role="ratioModeCalc"]');
     refs.cancelAmountResultEl = wrap.querySelector('[data-role="cancelAmountResult"]');
+    refs.attachmentFileInput = wrap.querySelector('[data-field="attachmentFile"]');
+    refs.attachmentListEl = wrap.querySelector('[data-role="attachmentList"]');
 
     bindDateMask(refs.startDateInput, refs.maturityDateInput);
     bindDateMask(refs.maturityDateInput, null);
@@ -566,7 +575,44 @@
       renderReport();
     });
 
+    refs.attachmentFileInput.addEventListener("change", function () {
+      var file = refs.attachmentFileInput.files && refs.attachmentFileInput.files[0];
+      refs.attachmentFileInput.value = "";
+      if (!file) return;
+      if (!/^image\//.test(file.type)) {
+        alert("이미지 파일(스크린샷, 사진)만 첨부할 수 있습니다.");
+        return;
+      }
+      var reader = new FileReader();
+      reader.onload = function () {
+        p.attachments.push({ id: state.nextId++, name: file.name, dataUrl: reader.result });
+        renderProductAttachments(p);
+        renderReport();
+      };
+      reader.readAsDataURL(file);
+    });
+
     renderProductWithdrawalRows(p);
+    renderProductAttachments(p);
+  }
+
+  function renderProductAttachments(p) {
+    var container = p.refs.attachmentListEl;
+    container.innerHTML = "";
+    p.attachments.forEach(function (a) {
+      var row = document.createElement("div");
+      row.className = "attachment-row";
+      row.innerHTML =
+        '<img class="attachment-thumb" src="' + a.dataUrl + '" alt="' + escapeAttr(a.name) + '" />' +
+        '<span class="attachment-name">' + escapeHtml(a.name) + '</span>' +
+        '<button type="button" class="btn small danger" data-action="delete">삭제</button>';
+      row.querySelector('[data-action="delete"]').addEventListener("click", function () {
+        p.attachments = p.attachments.filter(function (x) { return x.id !== a.id; });
+        renderProductAttachments(p);
+        renderReport();
+      });
+      container.appendChild(row);
+    });
   }
 
   // ---------- 상품별 계산 ----------
@@ -863,6 +909,14 @@
     if (penalty.penaltyAmount !== null) html += kv("해지패널티 금액", formatWon(penalty.penaltyAmount));
     html += kv("해지적립금(재예치 원금)", formatWon(penalty.cancelAmount));
     html += "</div>";
+
+    if (r.product.attachments && r.product.attachments.length) {
+      html += '<div class="report-block"><h4>첨부: 해지패널티 계산 자료</h4>';
+      r.product.attachments.forEach(function (a) {
+        html += '<img class="attachment-print-image" src="' + a.dataUrl + '" alt="해지패널티 계산 자료" />';
+      });
+      html += '</div>';
+    }
 
     if (rows.length) {
       html += '<div class="report-block"><h4>신상품 재예치 상세 비교 (이 상품 만기일 기준 환산)</h4>';
