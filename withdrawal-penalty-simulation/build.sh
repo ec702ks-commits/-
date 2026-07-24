@@ -17,7 +17,10 @@ OUT="dist/중도해지_패널티_시뮬레이션.html"
   echo '</style>'
   echo '</head>'
   echo '<body>'
-  sed -n '/^<body>/,/^<script src="app.js/p' index.html | sed '1d;$d'
+  sed -n '/^<body>/,/^<script src="vendor\/xlsx.full.min.js/p' index.html | sed '1d;$d'
+  echo '<script>'
+  cat vendor/xlsx.full.min.js
+  echo '</script>'
   echo '<script>'
   cat app.js
   echo '</script>'

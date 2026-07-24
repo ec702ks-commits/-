@@ -445,8 +445,8 @@
 
       '<div class="product-subsection">' +
         '<h4>해지패널티 계산 자료 첨부(선택)</h4>' +
-        '<p class="hint">당사 시스템에서 나오는 해지패널티 계산 화면을 캡처/촬영해서 첨부하면, 아래 결과 요약과 PDF에 그대로 포함됩니다. 이미지 파일(스크린샷, 사진)만 지원하며, 여러 장 첨부할 수 있습니다. 파일은 서버로 전송되지 않고 이 화면 안에서만 처리됩니다.</p>' +
-        '<input type="file" accept="image/*" data-field="attachmentFile" />' +
+        '<p class="hint">당사 시스템에서 나오는 해지패널티 계산 자료를 첨부하면, 아래 결과 요약과 PDF에 그대로 포함됩니다. 이미지(스크린샷, 사진) 또는 엑셀 파일(.xlsx/.xls/.csv)을 지원하며, 여러 개 첨부할 수 있습니다. 파일은 서버로 전송되지 않고 이 화면 안에서만 처리됩니다.</p>' +
+        '<input type="file" accept="image/*,.xlsx,.xls,.csv" data-field="attachmentFile" />' +
         '<div class="attachment-list" data-role="attachmentList"></div>' +
       '</div>'
     );
@@ -579,17 +579,36 @@
       var file = refs.attachmentFileInput.files && refs.attachmentFileInput.files[0];
       refs.attachmentFileInput.value = "";
       if (!file) return;
-      if (!/^image\//.test(file.type)) {
-        alert("이미지 파일(스크린샷, 사진)만 첨부할 수 있습니다.");
+
+      if (/^image\//.test(file.type)) {
+        var reader = new FileReader();
+        reader.onload = function () {
+          p.attachments.push({ id: state.nextId++, kind: "image", name: file.name, dataUrl: reader.result });
+          renderProductAttachments(p);
+          renderReport();
+        };
+        reader.readAsDataURL(file);
         return;
       }
-      var reader = new FileReader();
-      reader.onload = function () {
-        p.attachments.push({ id: state.nextId++, name: file.name, dataUrl: reader.result });
-        renderProductAttachments(p);
-        renderReport();
-      };
-      reader.readAsDataURL(file);
+
+      if (/\.(xlsx|xls|csv)$/i.test(file.name)) {
+        if (typeof XLSX === "undefined") {
+          alert("엑셀을 읽는 기능을 불러오지 못했습니다. 페이지를 새로고침한 뒤 다시 시도해주세요.");
+          return;
+        }
+        parseSpreadsheetFile(file, function (err, sheets) {
+          if (err || !sheets || !sheets.length) {
+            alert("이 파일을 열 수 없습니다. 비밀번호가 걸려 있거나 지원하지 않는 형식일 수 있습니다.");
+            return;
+          }
+          p.attachments.push({ id: state.nextId++, kind: "excel", name: file.name, sheets: sheets });
+          renderProductAttachments(p);
+          renderReport();
+        });
+        return;
+      }
+
+      alert("이미지(스크린샷, 사진) 또는 엑셀 파일(.xlsx/.xls/.csv)만 첨부할 수 있습니다.");
     });
 
     renderProductWithdrawalRows(p);
@@ -602,9 +621,14 @@
     p.attachments.forEach(function (a) {
       var row = document.createElement("div");
       row.className = "attachment-row";
-      row.innerHTML =
-        '<img class="attachment-thumb" src="' + a.dataUrl + '" alt="' + escapeAttr(a.name) + '" />' +
-        '<span class="attachment-name">' + escapeHtml(a.name) + '</span>' +
+      var thumbHtml = a.kind === "excel"
+        ? '<span class="attachment-thumb attachment-thumb-excel">표</span>'
+        : '<img class="attachment-thumb" src="' + a.dataUrl + '" alt="' + escapeAttr(a.name) + '" />';
+      var nameHtml = a.kind === "excel"
+        ? escapeHtml(a.name) + '<span class="attachment-meta">' + a.sheets.length + '개 시트 · ' + a.sheets.reduce(function (s, sh) { return s + sh.rows.length; }, 0) + '행 인식됨</span>'
+        : escapeHtml(a.name);
+      row.innerHTML = thumbHtml +
+        '<span class="attachment-name">' + nameHtml + '</span>' +
         '<button type="button" class="btn small danger" data-action="delete">삭제</button>';
       row.querySelector('[data-action="delete"]').addEventListener("click", function () {
         p.attachments = p.attachments.filter(function (x) { return x.id !== a.id; });
@@ -613,6 +637,57 @@
       });
       container.appendChild(row);
     });
+  }
+
+  // ---------- 엑셀/CSV 첨부 파싱 ----------
+
+  var ATTACHMENT_MAX_ROWS = 200;
+  var ATTACHMENT_MAX_COLS = 30;
+
+  function parseSpreadsheetFile(file, callback) {
+    var isCsv = /\.csv$/i.test(file.name);
+    var reader = new FileReader();
+    reader.onload = function () {
+      try {
+        var wb = isCsv
+          ? XLSX.read(reader.result, { type: "string" })
+          : XLSX.read(new Uint8Array(reader.result), { type: "array" });
+        var sheets = wb.SheetNames.map(function (name) {
+          var ws = wb.Sheets[name];
+          var rows = XLSX.utils.sheet_to_json(ws, { header: 1, blankrows: false, defval: "", raw: false });
+          var truncated = rows.length > ATTACHMENT_MAX_ROWS;
+          rows = rows.slice(0, ATTACHMENT_MAX_ROWS).map(function (row) {
+            var colsTruncated = row.length > ATTACHMENT_MAX_COLS;
+            var sliced = row.slice(0, ATTACHMENT_MAX_COLS);
+            if (colsTruncated) truncated = true;
+            return sliced;
+          });
+          return { name: name, rows: rows, truncated: truncated };
+        }).filter(function (s) { return s.rows.length > 0; });
+        callback(null, sheets);
+      } catch (e) {
+        callback(e, null);
+      }
+    };
+    reader.onerror = function () { callback(new Error("read failed"), null); };
+    if (isCsv) reader.readAsText(file);
+    else reader.readAsArrayBuffer(file);
+  }
+
+  function renderSheetTableHtml(sheet) {
+    var html = '<div class="table-scroll"><table class="report-table attachment-excel-table"><tbody>';
+    sheet.rows.forEach(function (row) {
+      html += "<tr>";
+      row.forEach(function (cell) {
+        html += "<td>" + escapeHtml(cell === null || cell === undefined ? "" : cell) + "</td>";
+      });
+      html += "</tr>";
+    });
+    html += "</tbody></table></div>";
+    if (sheet.truncated) {
+      html += '<p class="cell-note">(내용이 많아 앞부분만 표시했습니다. 전체 내용은 원본 파일을 확인해주세요.)</p>';
+    }
+    return html;
   }
 
   // ---------- 상품별 계산 ----------
@@ -913,7 +988,18 @@
     if (r.product.attachments && r.product.attachments.length) {
       html += '<div class="report-block"><h4>첨부: 해지패널티 계산 자료</h4>';
       r.product.attachments.forEach(function (a) {
-        html += '<img class="attachment-print-image" src="' + a.dataUrl + '" alt="해지패널티 계산 자료" />';
+        if (a.kind === "excel") {
+          a.sheets.forEach(function (sheet) {
+            if (a.sheets.length > 1) {
+              html += '<p class="cell-note"><strong>' + escapeHtml(a.name) + '</strong> — 시트: ' + escapeHtml(sheet.name) + '</p>';
+            } else {
+              html += '<p class="cell-note">' + escapeHtml(a.name) + '</p>';
+            }
+            html += renderSheetTableHtml(sheet);
+          });
+        } else {
+          html += '<img class="attachment-print-image" src="' + a.dataUrl + '" alt="해지패널티 계산 자료" />';
+        }
       });
       html += '</div>';
     }

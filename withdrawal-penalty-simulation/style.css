@@ -476,12 +476,30 @@ input[type="file"] {
   background: var(--card-bg);
 }
 
+.attachment-thumb-excel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--success);
+  background: var(--badge-better-bg);
+}
+
 .attachment-name {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   font-size: 0.8rem;
   color: var(--text-muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.attachment-meta {
+  font-size: 0.72rem;
+  color: var(--text-muted);
 }
 
 .attachment-print-image {
@@ -491,6 +509,16 @@ input[type="file"] {
   border: 1px solid var(--border);
   border-radius: 8px;
   margin-bottom: 10px;
+}
+
+.attachment-excel-table {
+  min-width: 320px;
+  margin-bottom: 4px;
+}
+
+.attachment-excel-table td,
+.attachment-excel-table th {
+  text-align: left;
 }
 
 .withdrawal-history {
