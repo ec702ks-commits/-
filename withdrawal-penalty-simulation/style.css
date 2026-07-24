@@ -521,6 +521,53 @@ input[type="file"] {
   text-align: left;
 }
 
+.attachment-subsection {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px dashed var(--gold);
+  border-radius: 10px;
+  background: var(--gold-soft);
+}
+
+.attachment-subsection h4 {
+  color: var(--gold-strong);
+}
+
+.autofill-summary {
+  margin-top: 10px;
+}
+
+.autofill-note {
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 0.82rem;
+}
+
+.autofill-note p {
+  margin: 0 0 6px;
+}
+
+.autofill-note ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.autofill-note li {
+  margin: 2px 0;
+}
+
+.autofill-ok {
+  border: 1px solid var(--success);
+  background: var(--badge-better-bg);
+  color: var(--text);
+}
+
+.autofill-none {
+  border: 1px solid var(--border);
+  background: var(--table-header-bg);
+  color: var(--text-muted);
+}
+
 .withdrawal-history {
   margin-top: 14px;
   padding-top: 14px;

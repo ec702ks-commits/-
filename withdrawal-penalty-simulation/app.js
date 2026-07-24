@@ -377,6 +377,15 @@
         '<input type="text" class="product-label-input" data-field="label" placeholder="상품명(예: A상품, 삼성생명 IRP) — 선택" />' +
         '<button type="button" class="btn small danger" data-action="delete-product">삭제</button>' +
       '</div>' +
+
+      '<div class="product-subsection attachment-subsection">' +
+        '<h4>해지패널티 계산 자료 첨부(선택) — 먼저 올리면 아래 항목이 자동으로 채워집니다</h4>' +
+        '<p class="hint">당사 시스템에서 나오는 해지패널티 계산 자료를 첨부하면 아래 계산기 항목(적립금·날짜·금리 등)을 자동으로 인식해서 채워줍니다. 이미지(스크린샷, 사진) 또는 엑셀 파일(.xlsx/.xls/.csv)을 지원하며, 여러 개 첨부할 수 있습니다. 파일은 서버로 전송되지 않고 이 화면 안에서만 처리됩니다. 자동으로 채워진 값은 아래에서 언제든 직접 수정할 수 있습니다.</p>' +
+        '<input type="file" accept="image/*,.xlsx,.xls,.csv" data-field="attachmentFile" />' +
+        '<div class="autofill-summary" data-role="autofillSummary"></div>' +
+        '<div class="attachment-list" data-role="attachmentList"></div>' +
+      '</div>' +
+
       '<div class="mapping-grid">' +
         '<label>현재 적립금(원)<input type="text" data-field="principal" placeholder="예: 100,000,000" /></label>' +
         '<label>납입원금(선택 — 알고 있으면 해지패널티 계산이 더 정확해집니다. 모르면 비워두세요)<input type="text" data-field="contributionPrincipal" /></label>' +
@@ -441,13 +450,6 @@
           '<p class="hint" data-role="ratioModeCalc"></p>' +
         '</div>' +
         '<p class="result-line">해지적립금(재예치 원금): <strong data-role="cancelAmountResult">-</strong></p>' +
-      '</div>' +
-
-      '<div class="product-subsection">' +
-        '<h4>해지패널티 계산 자료 첨부(선택)</h4>' +
-        '<p class="hint">당사 시스템에서 나오는 해지패널티 계산 자료를 첨부하면, 아래 결과 요약과 PDF에 그대로 포함됩니다. 이미지(스크린샷, 사진) 또는 엑셀 파일(.xlsx/.xls/.csv)을 지원하며, 여러 개 첨부할 수 있습니다. 파일은 서버로 전송되지 않고 이 화면 안에서만 처리됩니다.</p>' +
-        '<input type="file" accept="image/*,.xlsx,.xls,.csv" data-field="attachmentFile" />' +
-        '<div class="attachment-list" data-role="attachmentList"></div>' +
       '</div>'
     );
   }
@@ -521,6 +523,7 @@
     refs.cancelAmountResultEl = wrap.querySelector('[data-role="cancelAmountResult"]');
     refs.attachmentFileInput = wrap.querySelector('[data-field="attachmentFile"]');
     refs.attachmentListEl = wrap.querySelector('[data-role="attachmentList"]');
+    refs.autofillSummaryEl = wrap.querySelector('[data-role="autofillSummary"]');
 
     bindDateMask(refs.startDateInput, refs.maturityDateInput);
     bindDateMask(refs.maturityDateInput, null);
@@ -601,8 +604,12 @@
             alert("이 파일을 열 수 없습니다. 비밀번호가 걸려 있거나 지원하지 않는 형식일 수 있습니다.");
             return;
           }
-          p.attachments.push({ id: state.nextId++, kind: "excel", name: file.name, sheets: sheets });
+          var extracted = extractFieldsFromSheets(sheets);
+          var applied = applyExtractedFields(p, extracted);
+          p.attachments.push({ id: state.nextId++, kind: "excel", name: file.name, sheets: sheets, appliedFields: applied });
           renderProductAttachments(p);
+          renderAutofillSummary(p, applied, file.name);
+          updateProductPenaltyModeUI(p);
           renderReport();
         });
         return;
@@ -624,8 +631,10 @@
       var thumbHtml = a.kind === "excel"
         ? '<span class="attachment-thumb attachment-thumb-excel">표</span>'
         : '<img class="attachment-thumb" src="' + a.dataUrl + '" alt="' + escapeAttr(a.name) + '" />';
+      var appliedCount = (a.appliedFields && a.appliedFields.length) || 0;
       var nameHtml = a.kind === "excel"
-        ? escapeHtml(a.name) + '<span class="attachment-meta">' + a.sheets.length + '개 시트 · ' + a.sheets.reduce(function (s, sh) { return s + sh.rows.length; }, 0) + '행 인식됨</span>'
+        ? escapeHtml(a.name) + '<span class="attachment-meta">' + a.sheets.length + '개 시트 · ' + a.sheets.reduce(function (s, sh) { return s + sh.rows.length; }, 0) + '행 인식됨' +
+          (appliedCount ? ' · ' + appliedCount + '개 항목 자동입력됨' : '') + '</span>'
         : escapeHtml(a.name);
       row.innerHTML = thumbHtml +
         '<span class="attachment-name">' + nameHtml + '</span>' +
@@ -633,6 +642,7 @@
       row.querySelector('[data-action="delete"]').addEventListener("click", function () {
         p.attachments = p.attachments.filter(function (x) { return x.id !== a.id; });
         renderProductAttachments(p);
+        if (!p.attachments.length && p.refs.autofillSummaryEl) p.refs.autofillSummaryEl.innerHTML = "";
         renderReport();
       });
       container.appendChild(row);
@@ -672,6 +682,148 @@
     reader.onerror = function () { callback(new Error("read failed"), null); };
     if (isCsv) reader.readAsText(file);
     else reader.readAsArrayBuffer(file);
+  }
+
+  // ---------- 첨부 엑셀/CSV에서 항목 자동 인식 ----------
+
+  var FIELD_EXTRACT_SPECS = [
+    { field: "directPenaltyAmount", type: "amount", label: "해지패널티 금액", keywords: ["해지패널티금액", "해지패널티", "중도해지패널티", "패널티금액"] },
+    { field: "directCancelAmount", type: "amount", label: "해지적립금(재예치 원금)", keywords: ["해지적립금", "해지후적립금", "해지환급금", "재예치가능금액", "재예치원금", "중도해지적립금"] },
+    { field: "principal", type: "amount", label: "현재 적립금", keywords: ["현재적립금", "적립금현황", "평가금액", "적립금"] },
+    { field: "contributionPrincipal", type: "amount", label: "납입원금", keywords: ["납입원금", "납입원본", "납입금액"] },
+    { field: "startDate", type: "date", label: "명세일자", keywords: ["명세일자", "산출기준일", "기준일자", "명세일"] },
+    { field: "maturityDate", type: "date", label: "만기일", keywords: ["만기일자", "만기일"] },
+    { field: "contractRate", type: "rate", label: "약정금리", keywords: ["약정금리", "계약금리", "적용금리"] }
+  ];
+
+  function normalizeLabelText(v) {
+    return String(v === undefined || v === null ? "" : v).replace(/\s+/g, "").trim();
+  }
+
+  function parseFlexibleDateToMasked(v) {
+    var s = String(v === undefined || v === null ? "" : v).trim();
+    if (!s) return null;
+
+    // YYYY.MM.DD / YYYY-MM-DD / YYYY/MM/DD / YYYY년 MM월 DD일
+    var m = /(\d{4})\s*[.\-\/년]\s*(\d{1,2})\s*[.\-\/월]\s*(\d{1,2})/.exec(s);
+    if (m) {
+      var y = m[1], mo = ("0" + m[2]).slice(-2), d = ("0" + m[3]).slice(-2);
+      if (Number(mo) >= 1 && Number(mo) <= 12 && Number(d) >= 1 && Number(d) <= 31) return y + "." + mo + "." + d;
+    }
+
+    // M/D/YY 또는 M/D/YYYY (엑셀 날짜 셀이 서식 변환되어 이 형식으로 나오는 경우가 많음)
+    var m2 = /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/.exec(s);
+    if (m2) {
+      var mo3 = Number(m2[1]), d3 = Number(m2[2]), yRaw = m2[3];
+      var y3 = yRaw.length === 2 ? 2000 + Number(yRaw) : Number(yRaw);
+      if (mo3 >= 1 && mo3 <= 12 && d3 >= 1 && d3 <= 31) {
+        return y3 + "." + ("0" + mo3).slice(-2) + "." + ("0" + d3).slice(-2);
+      }
+    }
+
+    var digits = s.replace(/\D/g, "");
+    if (digits.length === 8) {
+      var y2 = digits.slice(0, 4), mo2 = digits.slice(4, 6), d2 = digits.slice(6, 8);
+      if (Number(mo2) >= 1 && Number(mo2) <= 12 && Number(d2) >= 1 && Number(d2) <= 31) return y2 + "." + mo2 + "." + d2;
+    }
+    return null;
+  }
+
+  // 시트들의 셀을 스캔해 라벨 텍스트를 찾고, 오른쪽/아래 인접 셀을 값으로 추출합니다.
+  function extractFieldsFromSheets(sheets) {
+    var results = {};
+    var consumed = {};
+
+    FIELD_EXTRACT_SPECS.forEach(function (spec) {
+      var found = null;
+      for (var si = 0; si < sheets.length && !found; si++) {
+        var rows = sheets[si].rows;
+        for (var ri = 0; ri < rows.length && !found; ri++) {
+          var row = rows[ri];
+          for (var ci = 0; ci < row.length && !found; ci++) {
+            var key = si + "-" + ri + "-" + ci;
+            if (consumed[key]) continue;
+            var norm = normalizeLabelText(row[ci]);
+            if (!norm) continue;
+            var matched = spec.keywords.some(function (kw) { return norm.indexOf(kw) !== -1; });
+            if (!matched) continue;
+
+            var rawValue = null;
+            if (ci + 1 < row.length && normalizeLabelText(row[ci + 1]) !== "") {
+              rawValue = row[ci + 1];
+            } else if (rows[ri + 1] && rows[ri + 1][ci] !== undefined && normalizeLabelText(rows[ri + 1][ci]) !== "") {
+              rawValue = rows[ri + 1][ci];
+            }
+            if (rawValue === null) continue;
+
+            var value = null;
+            if (spec.type === "amount") {
+              var digits = String(rawValue).replace(/[^\d]/g, "");
+              if (digits) value = parseInt(digits, 10);
+            } else if (spec.type === "date") {
+              value = parseFlexibleDateToMasked(rawValue);
+            } else if (spec.type === "rate") {
+              var rm = /(\d+(\.\d+)?)/.exec(String(rawValue));
+              if (rm) value = parseFloat(rm[1]);
+            }
+            if (value === null || value === undefined || (typeof value === "number" && isNaN(value))) continue;
+
+            consumed[key] = true;
+            found = { field: spec.field, label: spec.label, value: value };
+          }
+        }
+      }
+      if (found) results[spec.field] = found;
+    });
+
+    return results;
+  }
+
+  function applyExtractedFields(p, extracted) {
+    var refs = p.refs;
+    var fieldToInput = {
+      principal: refs.principalInput,
+      contributionPrincipal: refs.contributionPrincipalInput,
+      startDate: refs.startDateInput,
+      maturityDate: refs.maturityDateInput,
+      contractRate: refs.contractRateInput,
+      directCancelAmount: refs.directCancelAmountInput,
+      directPenaltyAmount: refs.directPenaltyAmountInput
+    };
+    var applied = [];
+    Object.keys(extracted).forEach(function (field) {
+      var input = fieldToInput[field];
+      if (!input) return;
+      var item = extracted[field];
+      if (field === "startDate" || field === "maturityDate" || field === "contractRate") {
+        input.value = item.value;
+      } else {
+        setAmountValue(input, item.value);
+      }
+      applied.push({ field: field, label: item.label, display: input.value });
+    });
+    if (extracted.directCancelAmount || extracted.directPenaltyAmount) {
+      refs.penaltyModeDirect.checked = true;
+    }
+    return applied;
+  }
+
+  function renderAutofillSummary(p, applied, fileName) {
+    var box = p.refs.autofillSummaryEl;
+    if (!box) return;
+    if (!applied || !applied.length) {
+      box.innerHTML =
+        '<div class="autofill-note autofill-none">"' + escapeHtml(fileName) + '"에서 자동으로 인식된 항목이 없습니다. 아래 항목을 직접 입력해주세요.</div>';
+      return;
+    }
+    var itemsHtml = applied.map(function (a) {
+      return '<li><strong>' + escapeHtml(a.label) + '</strong> → ' + escapeHtml(String(a.display)) + '</li>';
+    }).join("");
+    box.innerHTML =
+      '<div class="autofill-note autofill-ok">' +
+        '<p><strong>"' + escapeHtml(fileName) + '"에서 ' + applied.length + '개 항목을 자동으로 채웠습니다.</strong> 아래에서 값을 확인하고, 필요하면 직접 수정하세요.</p>' +
+        '<ul>' + itemsHtml + '</ul>' +
+      '</div>';
   }
 
   function renderSheetTableHtml(sheet) {
