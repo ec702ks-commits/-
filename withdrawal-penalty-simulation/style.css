@@ -725,6 +725,59 @@ footer {
   color: var(--text-muted);
 }
 
+.recommend-banner {
+  border-radius: 10px;
+  padding: 16px 18px;
+  margin: 0 0 14px;
+  border: 1px solid var(--border);
+}
+
+.recommend-eyebrow {
+  margin: 0 0 6px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+
+.recommend-headline {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.recommend-detail {
+  margin: 6px 0 0;
+  font-size: 0.86rem;
+}
+
+.recommend-switch {
+  background: linear-gradient(135deg, var(--gold-soft), var(--tile-bg) 70%);
+  border-color: var(--gold);
+  color: var(--navy-900);
+}
+
+.recommend-switch .recommend-headline strong {
+  color: var(--gold-strong);
+}
+
+.recommend-hold {
+  background: linear-gradient(135deg, #eaf1fb, var(--tile-bg) 70%);
+  border-color: var(--primary);
+  color: var(--navy-900);
+}
+
+.recommend-hold .recommend-headline strong {
+  color: var(--primary);
+}
+
+.recommend-neutral {
+  background: var(--tile-bg);
+  color: var(--text);
+}
+
 .report-block {
   margin-bottom: 18px;
 }

@@ -611,7 +611,7 @@
           if (tableRecords.length) {
             var targets = tableRecords.map(function (rec, idx) {
               var targetProduct = idx === 0 ? p : addProduct();
-              var applied = applyExtractedFields(targetProduct, tableRecordToExtracted(rec));
+              var applied = applyTableRecordToProduct(targetProduct, rec);
               updateProductPenaltyModeUI(targetProduct);
               return { product: targetProduct, applied: applied };
             });
@@ -751,6 +751,15 @@
     return null;
   }
 
+  // "이율보증형(2.5년)"처럼 상품명에 기간이 포함된 경우, 그 기간을 뽑아낸다.
+  function inferTermYearsFromLabel(label) {
+    if (!label) return null;
+    var m = /(\d+(\.\d+)?)\s*년/.exec(String(label));
+    if (!m) return null;
+    var years = parseFloat(m[1]);
+    return isNaN(years) ? null : years;
+  }
+
   // 시트들의 셀을 스캔해 라벨 텍스트를 찾고, 오른쪽/아래 인접 셀을 값으로 추출합니다.
   function extractFieldsFromSheets(sheets) {
     var results = {};
@@ -884,6 +893,35 @@
       }
     });
     return extracted;
+  }
+
+  // 표 형식 자료(당사 시스템 자료)를 상품카드에 적용한다. 만기일 컬럼이 없어도
+  // 상품명에 "OO년"처럼 기간이 들어있으면 명세일자 + 기간으로 만기일을 자동 계산하고,
+  // 보험사 상품은 관행상 월복리로 계산하므로 이자계산방식을 월복리로 맞춘다.
+  function applyTableRecordToProduct(targetProduct, rec) {
+    var extracted = tableRecordToExtracted(rec);
+
+    if (!extracted.maturityDate && extracted.label && extracted.startDate) {
+      var years = inferTermYearsFromLabel(extracted.label.value);
+      if (years) {
+        var startD = parseDateUTC(extracted.startDate.value);
+        if (startD) {
+          extracted.maturityDate = {
+            label: "만기일(상품명 기간 " + years + "년 기준 자동계산)",
+            value: formatDateUTC(addYears(startD, years))
+          };
+        }
+      }
+    }
+
+    var applied = applyExtractedFields(targetProduct, extracted);
+
+    if (targetProduct.refs.methodSelect.value !== "compoundMonth") {
+      targetProduct.refs.methodSelect.value = "compoundMonth";
+      applied.push({ field: "method", label: "이자계산방식(보험사 상품 기본값)", display: "월복리" });
+    }
+
+    return applied;
   }
 
   function applyExtractedFields(p, extracted) {
@@ -1178,6 +1216,36 @@
     el.reportContent.innerHTML = html;
   }
 
+  // 상품별 리포트에서 가장 먼저 보여줄 "그래서 어떻게 할지" 결론 배너.
+  function buildRecommendBanner(r) {
+    var bestRow = r.bestRow;
+    if (bestRow && bestRow.diff !== null) {
+      if (bestRow.diff > 0) {
+        return '<div class="recommend-banner recommend-switch">' +
+          '<p class="recommend-eyebrow">이 명세, 이렇게 하세요</p>' +
+          '<p class="recommend-headline">중도해지 후 <strong>' + escapeHtml(bestRow.label) + '</strong> 재예치 추천</p>' +
+          '<p class="recommend-detail">만기까지 유지 대비 <strong>' + formatSignedWon(bestRow.diff) + '</strong> 더 유리 (제안금리 ' + formatPct(bestRow.rate) + ')</p>' +
+          '</div>';
+      }
+      return '<div class="recommend-banner recommend-hold">' +
+        '<p class="recommend-eyebrow">이 명세, 이렇게 하세요</p>' +
+        '<p class="recommend-headline">만기까지 <strong>유지</strong> 추천</p>' +
+        '<p class="recommend-detail">재예치 최선안(' + escapeHtml(bestRow.label) + ') 대비 <strong>' + formatSignedWon(-bestRow.diff) + '</strong> 더 유리</p>' +
+        '</div>';
+    }
+    if (bestRow) {
+      return '<div class="recommend-banner recommend-neutral">' +
+        '<p class="recommend-eyebrow">이 명세, 이렇게 하세요</p>' +
+        '<p class="recommend-headline">최선 재예치 옵션: <strong>' + escapeHtml(bestRow.label) + '</strong></p>' +
+        '<p class="recommend-detail">만기까지 유지 시 예상 수령액을 입력하면 정확한 유불리를 비교해드립니다</p>' +
+        '</div>';
+    }
+    return '<div class="recommend-banner recommend-neutral">' +
+      '<p class="recommend-eyebrow">이 명세, 이렇게 하세요</p>' +
+      '<p class="recommend-headline">신상품 제안금리를 입력하면 추천이 표시됩니다</p>' +
+      '</div>';
+  }
+
   function buildProductReportSection(r, idx, multi) {
     var c = r.c, history = r.history, penalty = r.penalty, rows = r.rows, bestRow = r.bestRow;
     var holdAmountForCompare = r.holdAmountForCompare, remainYrs = r.remainYrs, breakEvenRate = r.breakEvenRate;
@@ -1188,23 +1256,15 @@
       html += '<h3 class="product-report-title">기존상품 ' + (idx + 1) + (c.label ? ' — ' + escapeHtml(c.label) : '') + '</h3>';
     }
 
-    // ---- KPI 타일 ----
+    // ---- 결론(추천) 배너: 세부 수치보다 먼저 보여준다 ----
+    html += buildRecommendBanner(r);
+
+    // ---- 근거 KPI 타일 ----
     html += '<div class="kpi-row">';
     html += kpiTile("만기까지 유지 시", formatWon(holdAmountForCompare), "만기일 " + formatDateUTC(c.maturity) + (r.holdAmount === null ? " · " + methodLabel(c.method) + " 추정치" : ""), false);
     html += kpiTile("해지적립금(재예치 원금)", formatWon(penalty.cancelAmount), penalty.penaltyAmount !== null ? "해지패널티 " + formatWon(penalty.penaltyAmount) : (penalty.mode === "direct" ? "직접입력" : ""), false);
     if (breakEvenRate !== null) {
       html += kpiTile("손익분기 금리", formatPct(breakEvenRate), "신상품이 이 금리보다 높아야 재예치가 유리(" + formatDateUTC(c.maturity) + " 기준)", false);
-    }
-    if (bestRow && bestRow.diff !== null) {
-      if (bestRow.diff > 0) {
-        html += kpiTile("추천: 재예치", escapeHtml(bestRow.label), "만기유지 대비 " + formatSignedWon(bestRow.diff), true);
-      } else {
-        html += kpiTile("추천: 만기까지 유지", "현 상품 보유", "재예치 최선(" + escapeHtml(bestRow.label) + ") 대비 " + formatSignedWon(-bestRow.diff) + " 더 유리", false);
-      }
-    } else if (bestRow) {
-      html += kpiTile("최선 재예치 옵션", escapeHtml(bestRow.label), "", false);
-    } else {
-      html += kpiTile("추천", "-", "3번에 신상품 금리를 입력하세요", false);
     }
     html += '</div>';
 
