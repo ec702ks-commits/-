@@ -391,13 +391,61 @@ button:focus-visible {
   font-size: 0.85rem;
 }
 
+#existingProducts {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+
+.product-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+  background: var(--tile-bg);
+}
+
+.product-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.product-index {
+  flex-shrink: 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.product-label-input {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+}
+
+.product-subsection {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.product-subsection h4 {
+  margin: 0 0 10px;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
 .withdrawal-history {
   margin-top: 14px;
   padding-top: 14px;
   border-top: 1px solid var(--border);
 }
 
-#withdrawalRows {
+[data-role="withdrawalRows"] {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -545,11 +593,31 @@ footer {
   margin-bottom: 18px;
 }
 
-.report-block h3 {
+.report-block h3,
+.report-block h4 {
   font-size: 0.92rem;
   font-weight: 700;
   margin: 0 0 10px;
   color: var(--navy-900);
+}
+
+.product-report {
+  margin-bottom: 8px;
+}
+
+.product-report-divided {
+  padding: 16px;
+  margin: 0 -16px 20px;
+  border-top: 6px solid var(--table-header-bg);
+}
+
+.product-report-title {
+  font-size: 1.02rem;
+  font-weight: 800;
+  color: var(--navy-900);
+  margin: 0 0 14px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid var(--gold-soft);
 }
 
 .chart-caption {

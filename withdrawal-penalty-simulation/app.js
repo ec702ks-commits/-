@@ -19,8 +19,8 @@
   };
 
   var state = {
-    rows: [], // { id, label, years, rate }
-    withdrawals: [], // { id, date, amount } — 명세일자 이후 실제 인출 이력
+    rows: [], // 신상품 재예치 제안금리: { id, label, years, rate }
+    products: [], // 기존상품(명세) 목록: { id, withdrawals:[{id,date,amount}], refs:{} }
     nextId: 1
   };
 
@@ -32,14 +32,9 @@
 
   function cacheEls() {
     [
-      "customerName", "principal", "contributionPrincipal",
-      "startDate", "maturityDate", "contractRate", "interestMethod", "todayDate",
-      "periodSummary", "holdAmount",
-      "suggestSimple", "suggestCompoundYear", "suggestCompoundMonth",
-      "modeDirect", "modeRatio", "directModeFields", "ratioModeFields",
-      "directCancelAmount", "directPenaltyAmount", "appliedRatePct", "ratioModeCalc",
-      "cancelAmountResult", "newProductRows", "addProductRow",
-      "withdrawalRows", "addWithdrawalRow", "historySummary",
+      "customerName", "todayDate",
+      "existingProducts", "addExistingProduct",
+      "newProductRows", "addProductRow",
       "rmName", "rmDept", "rmContact", "printBtn", "resetBtn", "reportContent"
     ].forEach(function (id) { el[id] = $(id); });
   }
@@ -84,9 +79,14 @@
     input.value = (num === null || num === undefined || isNaN(num)) ? "" : Math.round(num).toLocaleString("ko-KR");
   }
 
+  function parseAmountStr(str) {
+    var v = parseFloat(String(str === undefined || str === null ? "" : str).replace(/,/g, ""));
+    return isNaN(v) ? null : v;
+  }
+
   function parseDateUTC(str) {
     if (!str) return null;
-    var m = /^(\d{4})\.(\d{1,2})\.(\d{1,2})$/.exec(str.trim());
+    var m = /^(\d{4})\.(\d{1,2})\.(\d{1,2})$/.exec(String(str).trim());
     if (!m) return null;
     var y = Number(m[1]), mo = Number(m[2]), d = Number(m[3]);
     if (mo < 1 || mo > 12 || d < 1 || d > 31) return null;
@@ -155,9 +155,26 @@
     return (Math.round(n * 100) / 100) + "년";
   }
 
-  function numVal(input) {
-    var v = parseFloat(String(input.value).replace(/,/g, ""));
-    return isNaN(v) ? null : v;
+  function formatWonShort(n) {
+    if (n === null || n === undefined || isNaN(n)) return "-";
+    var v = Math.round(n);
+    var sign = v < 0 ? "-" : "";
+    v = Math.abs(v);
+    if (v >= 100000000) {
+      var eok = v / 100000000;
+      return sign + (Number.isInteger(eok) ? eok : eok.toFixed(1)) + "억";
+    }
+    if (v >= 10000) return sign + Math.round(v / 10000).toLocaleString("ko-KR") + "만";
+    return sign + v.toLocaleString("ko-KR");
+  }
+
+  function escapeAttr(str) {
+    return String(str === undefined || str === null ? "" : str).replace(/"/g, "&quot;");
+  }
+
+  function escapeHtml(str) {
+    return String(str === undefined || str === null ? "" : str)
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   }
 
   // ---------- 저장/불러오기 (신상품 금리 행, 작성자 정보) ----------
@@ -201,7 +218,7 @@
     }));
   }
 
-  // ---------- 신상품 행 렌더링 ----------
+  // ---------- 신상품 재예치 제안금리 행 렌더링 (공통, 상품 전체에 적용) ----------
 
   function renderRows() {
     el.newProductRows.innerHTML = "";
@@ -238,53 +255,7 @@
     state.rows.push(Object.assign({ id: state.nextId++, label: "", years: "", rate: "" }, preset || {}));
   }
 
-  // ---------- 중간인출 이력 행 렌더링 ----------
-
-  function renderWithdrawalRows() {
-    el.withdrawalRows.innerHTML = "";
-    state.withdrawals.forEach(function (row) {
-      var wrap = document.createElement("div");
-      wrap.className = "withdrawal-row";
-      wrap.innerHTML =
-        '<input type="text" data-field="date" placeholder="인출일 YYYY.MM.DD" value="' + escapeAttr(row.date) + '" />' +
-        '<input type="text" data-field="amount" placeholder="인출금액(원)" value="' + escapeAttr(row.amount) + '" />' +
-        '<button type="button" class="btn small danger" data-action="delete">삭제</button>';
-
-      var dateInput = wrap.querySelector('[data-field="date"]');
-      var amountInput = wrap.querySelector('[data-field="amount"]');
-      bindDateMask(dateInput, null);
-      bindAmountMask(amountInput);
-
-      wrap.querySelectorAll("input").forEach(function (input) {
-        input.addEventListener("input", function () {
-          row[input.getAttribute("data-field")] = input.value;
-          renderReport();
-        });
-      });
-      wrap.querySelector('[data-action="delete"]').addEventListener("click", function () {
-        state.withdrawals = state.withdrawals.filter(function (r) { return r.id !== row.id; });
-        renderWithdrawalRows();
-        renderReport();
-      });
-
-      el.withdrawalRows.appendChild(wrap);
-    });
-  }
-
-  function addWithdrawalRow() {
-    state.withdrawals.push({ id: state.nextId++, date: "", amount: "" });
-  }
-
-  function escapeAttr(str) {
-    return String(str === undefined || str === null ? "" : str).replace(/"/g, "&quot;");
-  }
-
-  function escapeHtml(str) {
-    return String(str === undefined || str === null ? "" : str)
-      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  }
-
-  // ---------- 계산 ----------
+  // ---------- 계산 유틸 ----------
 
   // 이자계산방식(단리/연복리/월복리)에 따른 성장계수. r=연이율(소수), t=기간(년)
   function growthFactor(method, r, t) {
@@ -299,37 +270,14 @@
     return "연복리";
   }
 
-  function gatherCustomer() {
-    var principal = numVal(el.principal);
-    var start = parseDateUTC(el.startDate.value);
-    var maturity = parseDateUTC(el.maturityDate.value);
-    var rate = numVal(el.contractRate);
-    var method = el.interestMethod.value || "compoundYear";
-    var today = parseDateUTC(el.todayDate.value);
-    var contributionPrincipal = numVal(el.contributionPrincipal);
-
-    var totalYears = yearsBetween(start, maturity);
-    var elapsedYears = yearsBetween(start, today);
-    var remainingYears = yearsBetween(today, maturity);
-
-    return {
-      customerName: el.customerName.value.trim(),
-      principal: principal, start: start, maturity: maturity, rate: rate, method: method, today: today,
-      contributionPrincipal: contributionPrincipal,
-      totalYears: totalYears, elapsedYears: elapsedYears, remainingYears: remainingYears,
-      remainingYearsClamped: remainingYears === null ? null : Math.max(0, remainingYears),
-      valid: principal !== null && start && maturity && rate !== null && today
-    };
-  }
-
   // 명세일자 이후 실제 인출 이력을 반영해 "오늘 기준 실제 잔액"을 재구성한다.
   // 보수적으로 인출액은 항상 원금에서 먼저 차감된 것으로 간주한다(=남는 순원금이
   // 작아지고, 그만큼 이자 비중이 커져서 중도해지 패널티 계산 시 더 낮은 금액이 나온다).
-  function gatherWithdrawalEvents() {
-    return state.withdrawals.map(function (w) {
-      return { date: parseDateUTC(w.date), amount: parseFloat(String(w.amount).replace(/,/g, "")) };
+  function gatherWithdrawalEvents(withdrawals) {
+    return withdrawals.map(function (w) {
+      return { date: parseDateUTC(w.date), amount: parseAmountStr(w.amount) };
     }).filter(function (e) {
-      return e.date && !isNaN(e.amount) && e.amount > 0;
+      return e.date && e.amount !== null && e.amount > 0;
     });
   }
 
@@ -383,29 +331,296 @@
     };
   }
 
-  function updatePeriodSummary(c) {
+  // ---------- 기존상품(명세) : 여러 건 지원 ----------
+
+  function createProduct() {
+    return { id: state.nextId++, withdrawals: [], refs: {} };
+  }
+
+  // 상품 카드는 추가될 때 딱 한 번만 DOM에 생성되고, 이후 renderReport()가
+  // 아무리 자주 호출돼도 다시 만들어지지 않는다(다시 만들면 입력 중이던
+  // 다른 상품 카드의 값이 전부 날아가고 포커스도 끊긴다).
+  function addProduct() {
+    var p = createProduct();
+    state.products.push(p);
+    var wrap = document.createElement("div");
+    wrap.className = "product-card";
+    wrap.innerHTML = productCardMarkup(p, state.products.length - 1);
+    el.existingProducts.appendChild(wrap);
+    bindProductCard(wrap, p);
+    updateProductChrome();
+    return p;
+  }
+
+  function removeProduct(id) {
+    var p = state.products.filter(function (pp) { return pp.id === id; })[0];
+    state.products = state.products.filter(function (pp) { return pp.id !== id; });
+    if (p && p.refs.card) p.refs.card.remove();
+    if (!state.products.length) addProduct();
+    updateProductChrome();
+    renderReport();
+  }
+
+  // 삭제 후 남은 카드들의 "기존상품 N" 번호와, 카드가 1개뿐일 때 삭제 버튼을
+  // 숨기는 처리를 다시 계산한다(카드 자체는 다시 그리지 않는다).
+  function updateProductChrome() {
+    state.products.forEach(function (p, index) {
+      if (p.refs.indexEl) p.refs.indexEl.textContent = "기존상품 " + (index + 1);
+      if (p.refs.deleteBtn) p.refs.deleteBtn.classList.toggle("hidden", state.products.length <= 1);
+    });
+  }
+
+  function productCardMarkup(p, index) {
+    return (
+      '<div class="product-card-header">' +
+        '<span class="product-index">기존상품 ' + (index + 1) + '</span>' +
+        '<input type="text" class="product-label-input" data-field="label" placeholder="상품명(예: A상품, 삼성생명 IRP) — 선택" />' +
+        '<button type="button" class="btn small danger" data-action="delete-product">삭제</button>' +
+      '</div>' +
+      '<div class="mapping-grid">' +
+        '<label>현재 적립금(원)<input type="text" data-field="principal" placeholder="예: 100,000,000" /></label>' +
+        '<label>납입원금(선택 — 알고 있으면 해지패널티 계산이 더 정확해집니다. 모르면 비워두세요)<input type="text" data-field="contributionPrincipal" /></label>' +
+        '<div class="two-col">' +
+          '<label>명세일자<input type="text" data-field="startDate" /></label>' +
+          '<label>만기일<input type="text" data-field="maturityDate" /></label>' +
+        '</div>' +
+        '<div class="term-quick">' +
+          '<span class="term-quick-label">만기일 빠른 설정(명세일자 + 기간, 직접입력도 그대로 가능):</span>' +
+          '<div class="term-quick-buttons">' +
+            '<button type="button" class="btn small term-quick-btn" data-term-years="1">1년</button>' +
+            '<button type="button" class="btn small term-quick-btn" data-term-years="2">2년</button>' +
+            '<button type="button" class="btn small term-quick-btn" data-term-years="2.5">2.5년</button>' +
+            '<button type="button" class="btn small term-quick-btn" data-term-years="3">3년</button>' +
+            '<button type="button" class="btn small term-quick-btn" data-term-years="5">5년</button>' +
+          '</div>' +
+        '</div>' +
+        '<div class="two-col">' +
+          '<label>약정금리(연 %)<input type="number" data-field="contractRate" min="0" step="0.01" placeholder="예: 3.5" /></label>' +
+          '<label>이자계산방식' +
+            '<select data-field="method">' +
+              '<option value="compoundYear" selected>연복리</option>' +
+              '<option value="simple">연단리</option>' +
+              '<option value="compoundMonth">월복리</option>' +
+            '</select>' +
+          '</label>' +
+        '</div>' +
+      '</div>' +
+      '<p class="hint" data-role="periodSummary"></p>' +
+
+      '<div class="withdrawal-history">' +
+        '<p class="hint"><strong>중간인출 이력(선택)</strong> — 명세일자 이후 퇴직금 등으로 실제 인출된 금액이 있으면 추가하세요. 있으면 "만기까지 유지 시"와 "중도해지 시" 계산에 자동 반영됩니다(보수적으로 원금에서 먼저 차감되는 것으로 계산).</p>' +
+        '<div data-role="withdrawalRows"></div>' +
+        '<button type="button" class="btn small" data-action="add-withdrawal">+ 인출 이력 추가</button>' +
+        '<p class="hint" data-role="historySummary"></p>' +
+      '</div>' +
+
+      '<div class="product-subsection">' +
+        '<h4>이 상품을 만기까지 유지할 경우</h4>' +
+        '<label>만기 시 예상 수령액(원)<input type="text" data-field="holdAmount" placeholder="시스템 조회값 또는 아래 참고값 사용" /></label>' +
+        '<p class="hint">아래에서 이자계산방식을 골라 사용하세요(기본값 연복리). 고르면 위 "이자계산방식"도 함께 바뀝니다.</p>' +
+        '<div class="suggest-list">' +
+          '<div class="suggest-row"><span class="suggest-label">연단리</span><span class="suggest-value" data-role="suggestSimple">-</span><button type="button" class="btn small suggest-use-btn" data-method="simple">사용</button></div>' +
+          '<div class="suggest-row"><span class="suggest-label">연복리</span><span class="suggest-value" data-role="suggestCompoundYear">-</span><button type="button" class="btn small suggest-use-btn" data-method="compoundYear">사용</button></div>' +
+          '<div class="suggest-row"><span class="suggest-label">월복리</span><span class="suggest-value" data-role="suggestCompoundMonth">-</span><button type="button" class="btn small suggest-use-btn" data-method="compoundMonth">사용</button></div>' +
+        '</div>' +
+      '</div>' +
+
+      '<div class="product-subsection">' +
+        '<h4>이 상품의 중도해지 패널티</h4>' +
+        '<p class="hint">당사 상품처럼 해지패널티/해지적립금을 정확히 알 수 있으면 "직접입력", 타사 신탁상품처럼 "중도해지 시 적용이율이 약정금리의 80%" 식으로만 아는 경우 "적용이율 비율"을 사용하세요.</p>' +
+        '<div class="radio-row">' +
+          '<label><input type="radio" name="penaltyMode-' + p.id + '" data-field="penaltyMode" value="direct" checked /> 해지적립금 직접입력</label>' +
+          '<label><input type="radio" name="penaltyMode-' + p.id + '" data-field="penaltyMode" value="ratio" /> 적용이율 비율로 계산</label>' +
+        '</div>' +
+        '<div class="mapping-grid" data-role="directModeFields">' +
+          '<label>해지적립금(패널티 차감 후, 재예치 가능 금액, 원)<input type="text" data-field="directCancelAmount" /></label>' +
+          '<label>해지패널티 금액(원) — 선택, 참고용<input type="text" data-field="directPenaltyAmount" /></label>' +
+        '</div>' +
+        '<div class="mapping-grid hidden" data-role="ratioModeFields">' +
+          '<label>중도해지 시 적용이율 비율(%, 약정금리 대비)<input type="number" data-field="appliedRatePct" min="0" max="100" step="1" placeholder="예: 80" /></label>' +
+          '<p class="hint" data-role="ratioModeCalc"></p>' +
+        '</div>' +
+        '<p class="result-line">해지적립금(재예치 원금): <strong data-role="cancelAmountResult">-</strong></p>' +
+      '</div>'
+    );
+  }
+
+  function renderProductWithdrawalRows(p) {
+    var container = p.refs.withdrawalRowsEl;
+    container.innerHTML = "";
+    p.withdrawals.forEach(function (row) {
+      var wrap = document.createElement("div");
+      wrap.className = "withdrawal-row";
+      wrap.innerHTML =
+        '<input type="text" data-field="date" placeholder="인출일 YYYY.MM.DD" value="' + escapeAttr(row.date) + '" />' +
+        '<input type="text" data-field="amount" placeholder="인출금액(원)" value="' + escapeAttr(row.amount) + '" />' +
+        '<button type="button" class="btn small danger" data-action="delete">삭제</button>';
+
+      var dateInput = wrap.querySelector('[data-field="date"]');
+      var amountInput = wrap.querySelector('[data-field="amount"]');
+      bindDateMask(dateInput, null);
+      bindAmountMask(amountInput);
+
+      wrap.querySelectorAll("input").forEach(function (input) {
+        input.addEventListener("input", function () {
+          row[input.getAttribute("data-field")] = input.value;
+          renderReport();
+        });
+      });
+      wrap.querySelector('[data-action="delete"]').addEventListener("click", function () {
+        p.withdrawals = p.withdrawals.filter(function (r) { return r.id !== row.id; });
+        renderProductWithdrawalRows(p);
+        renderReport();
+      });
+
+      container.appendChild(wrap);
+    });
+  }
+
+  function updateProductPenaltyModeUI(p) {
+    var refs = p.refs;
+    var mode = refs.penaltyModeRatio.checked ? "ratio" : "direct";
+    refs.directModeFields.classList.toggle("hidden", mode !== "direct");
+    refs.ratioModeFields.classList.toggle("hidden", mode !== "ratio");
+  }
+
+  function bindProductCard(wrap, p) {
+    var refs = p.refs;
+    refs.card = wrap;
+    refs.indexEl = wrap.querySelector('.product-index');
+    refs.deleteBtn = wrap.querySelector('[data-action="delete-product"]');
+    refs.labelInput = wrap.querySelector('[data-field="label"]');
+    refs.principalInput = wrap.querySelector('[data-field="principal"]');
+    refs.contributionPrincipalInput = wrap.querySelector('[data-field="contributionPrincipal"]');
+    refs.startDateInput = wrap.querySelector('[data-field="startDate"]');
+    refs.maturityDateInput = wrap.querySelector('[data-field="maturityDate"]');
+    refs.contractRateInput = wrap.querySelector('[data-field="contractRate"]');
+    refs.methodSelect = wrap.querySelector('[data-field="method"]');
+    refs.periodSummaryEl = wrap.querySelector('[data-role="periodSummary"]');
+    refs.withdrawalRowsEl = wrap.querySelector('[data-role="withdrawalRows"]');
+    refs.historySummaryEl = wrap.querySelector('[data-role="historySummary"]');
+    refs.holdAmountInput = wrap.querySelector('[data-field="holdAmount"]');
+    refs.suggestSimpleEl = wrap.querySelector('[data-role="suggestSimple"]');
+    refs.suggestCompoundYearEl = wrap.querySelector('[data-role="suggestCompoundYear"]');
+    refs.suggestCompoundMonthEl = wrap.querySelector('[data-role="suggestCompoundMonth"]');
+    refs.penaltyModeDirect = wrap.querySelector('[data-field="penaltyMode"][value="direct"]');
+    refs.penaltyModeRatio = wrap.querySelector('[data-field="penaltyMode"][value="ratio"]');
+    refs.directModeFields = wrap.querySelector('[data-role="directModeFields"]');
+    refs.ratioModeFields = wrap.querySelector('[data-role="ratioModeFields"]');
+    refs.directCancelAmountInput = wrap.querySelector('[data-field="directCancelAmount"]');
+    refs.directPenaltyAmountInput = wrap.querySelector('[data-field="directPenaltyAmount"]');
+    refs.appliedRatePctInput = wrap.querySelector('[data-field="appliedRatePct"]');
+    refs.ratioModeCalcEl = wrap.querySelector('[data-role="ratioModeCalc"]');
+    refs.cancelAmountResultEl = wrap.querySelector('[data-role="cancelAmountResult"]');
+
+    bindDateMask(refs.startDateInput, refs.maturityDateInput);
+    bindDateMask(refs.maturityDateInput, null);
+    [refs.principalInput, refs.contributionPrincipalInput, refs.holdAmountInput, refs.directCancelAmountInput, refs.directPenaltyAmountInput].forEach(bindAmountMask);
+
+    [refs.labelInput, refs.principalInput, refs.contributionPrincipalInput, refs.startDateInput, refs.maturityDateInput,
+      refs.contractRateInput, refs.holdAmountInput, refs.directCancelAmountInput, refs.directPenaltyAmountInput, refs.appliedRatePctInput
+    ].forEach(function (input) {
+      input.addEventListener("input", renderReport);
+    });
+    refs.methodSelect.addEventListener("change", renderReport);
+    [refs.penaltyModeDirect, refs.penaltyModeRatio].forEach(function (radio) {
+      radio.addEventListener("change", function () {
+        updateProductPenaltyModeUI(p);
+        renderReport();
+      });
+    });
+
+    refs.deleteBtn.addEventListener("click", function () {
+      if (confirm("이 기존상품을 삭제할까요?")) removeProduct(p.id);
+    });
+
+    wrap.querySelectorAll(".term-quick-btn").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var start = parseDateUTC(refs.startDateInput.value);
+        if (!start) {
+          alert("먼저 명세일자를 입력해주세요.");
+          return;
+        }
+        var years = parseFloat(btn.getAttribute("data-term-years"));
+        refs.maturityDateInput.value = formatDateUTC(addYears(start, years));
+        renderReport();
+      });
+    });
+
+    wrap.querySelectorAll(".suggest-use-btn").forEach(function (btn) {
+      var method = btn.getAttribute("data-method");
+      btn.addEventListener("click", function () {
+        refs.methodSelect.value = method;
+        var c = gatherProductCustomer(p);
+        var s = updateHoldSuggestion(p, c);
+        if (s && s[method] !== null && !isNaN(s[method])) {
+          setAmountValue(refs.holdAmountInput, s[method]);
+          renderReport();
+        }
+      });
+    });
+
+    wrap.querySelector('[data-action="add-withdrawal"]').addEventListener("click", function () {
+      p.withdrawals.push({ id: state.nextId++, date: "", amount: "" });
+      renderProductWithdrawalRows(p);
+      renderReport();
+    });
+
+    renderProductWithdrawalRows(p);
+  }
+
+  // ---------- 상품별 계산 ----------
+
+  function gatherProductCustomer(p) {
+    var refs = p.refs;
+    var principal = parseAmountStr(refs.principalInput.value);
+    var start = parseDateUTC(refs.startDateInput.value);
+    var maturity = parseDateUTC(refs.maturityDateInput.value);
+    var rate = parseFloat(refs.contractRateInput.value);
+    rate = isNaN(rate) ? null : rate;
+    var method = refs.methodSelect.value || "compoundYear";
+    var today = parseDateUTC(el.todayDate.value);
+    var contributionPrincipal = parseAmountStr(refs.contributionPrincipalInput.value);
+
+    var totalYears = yearsBetween(start, maturity);
+    var elapsedYears = yearsBetween(start, today);
+    var remainingYears = yearsBetween(today, maturity);
+
+    return {
+      label: refs.labelInput.value.trim(),
+      principal: principal, start: start, maturity: maturity, rate: rate, method: method, today: today,
+      contributionPrincipal: contributionPrincipal,
+      totalYears: totalYears, elapsedYears: elapsedYears, remainingYears: remainingYears,
+      remainingYearsClamped: remainingYears === null ? null : Math.max(0, remainingYears),
+      valid: principal !== null && start && maturity && rate !== null && today
+    };
+  }
+
+  function updateProductPeriodSummary(p, c) {
+    var elp = p.refs.periodSummaryEl;
     if (!c.start || !c.maturity || !c.today) {
-      el.periodSummary.textContent = "";
+      elp.textContent = "";
       return;
     }
     var parts = [];
     if (c.totalYears !== null) parts.push("전체기간 " + formatYears(c.totalYears));
     if (c.elapsedYears !== null) parts.push("경과기간 " + formatYears(c.elapsedYears));
     if (c.remainingYears !== null) parts.push("잔여기간 " + formatYears(c.remainingYears));
-    el.periodSummary.textContent = parts.join(" · ");
+    elp.textContent = parts.join(" · ");
   }
 
   // 세 방식(연단리/연복리/월복리) 각각 "그 방식으로 전부 일관되게 계산했을 때"의
   // 만기 예상 수령액을 따로 구한다. 그래야 화면에 보이는 참고값과, 그 값을
   // "사용" 눌러서 채웠을 때 실제로 들어가는 값이 항상 서로 일치한다.
-  function updateHoldSuggestion(c) {
+  function updateHoldSuggestion(p, c) {
+    var refs = p.refs;
     if (c.principal === null || c.rate === null || c.totalYears === null) {
-      el.suggestSimple.textContent = "-";
-      el.suggestCompoundYear.textContent = "-";
-      el.suggestCompoundMonth.textContent = "-";
+      refs.suggestSimpleEl.textContent = "-";
+      refs.suggestCompoundYearEl.textContent = "-";
+      refs.suggestCompoundMonthEl.textContent = "-";
       return null;
     }
-    var events = gatherWithdrawalEvents();
+    var events = gatherWithdrawalEvents(p.withdrawals);
     var t = c.remainingYearsClamped === null ? 0 : c.remainingYearsClamped;
     var results = {};
 
@@ -416,26 +631,27 @@
       results[m] = base * growthFactor(m, c.rate / 100, t);
     });
 
-    el.suggestSimple.textContent = formatWon(results.simple);
-    el.suggestCompoundYear.textContent = formatWon(results.compoundYear);
-    el.suggestCompoundMonth.textContent = formatWon(results.compoundMonth);
+    refs.suggestSimpleEl.textContent = formatWon(results.simple);
+    refs.suggestCompoundYearEl.textContent = formatWon(results.compoundYear);
+    refs.suggestCompoundMonthEl.textContent = formatWon(results.compoundMonth);
 
     return results;
   }
 
-  function updatePenalty(c, history) {
-    var mode = el.modeDirect.checked ? "direct" : "ratio";
-    el.directModeFields.classList.toggle("hidden", mode !== "direct");
-    el.ratioModeFields.classList.toggle("hidden", mode !== "ratio");
+  function updatePenalty(p, c, history) {
+    var refs = p.refs;
+    updateProductPenaltyModeUI(p);
+    var mode = refs.penaltyModeRatio.checked ? "ratio" : "direct";
 
     var cancelAmount = null;
     var penaltyAmount = null;
 
     if (mode === "direct") {
-      cancelAmount = numVal(el.directCancelAmount);
-      penaltyAmount = numVal(el.directPenaltyAmount);
+      cancelAmount = parseAmountStr(refs.directCancelAmountInput.value);
+      penaltyAmount = parseAmountStr(refs.directPenaltyAmountInput.value);
     } else {
-      var ratePct = numVal(el.appliedRatePct);
+      var ratePct = parseFloat(refs.appliedRatePctInput.value);
+      ratePct = isNaN(ratePct) ? null : ratePct;
 
       if (c.principal !== null && c.rate !== null && c.elapsedYears !== null && ratePct !== null && history) {
         var preValue = history.balanceToday;
@@ -445,95 +661,153 @@
         var interestPortion = Math.max(0, preValue - netPrincipal);
         cancelAmount = netPrincipal + interestPortion * (ratePct / 100);
         penaltyAmount = preValue - cancelAmount;
-        el.ratioModeCalc.textContent =
+        refs.ratioModeCalcEl.textContent =
           "해지시점 세전평가액(참고) " + formatWon(preValue) + " → 해지패널티 " + formatWon(penaltyAmount) + " → 해지적립금 " + formatWon(cancelAmount) +
           " (순원금 " + formatWon(netPrincipal) + (netPrincipalEstimated ? ", 납입원금 미입력으로 추정치 사용" : "") + ")";
       } else {
-        el.ratioModeCalc.textContent = "";
+        refs.ratioModeCalcEl.textContent = "";
       }
     }
 
-    el.cancelAmountResult.textContent = cancelAmount === null ? "-" : formatWon(cancelAmount);
+    refs.cancelAmountResultEl.textContent = cancelAmount === null ? "-" : formatWon(cancelAmount);
     return { mode: mode, cancelAmount: cancelAmount, penaltyAmount: penaltyAmount };
   }
 
-  // ---------- 결과 요약(리포트) ----------
-  // 비교 기준: 기존상품 만기일. 재예치 금액도 "잔여기간" 동안 신금리를 적용해
-  // 기존상품 만기일 시점 금액으로 환산해서 비교한다.
+  // 상품 하나에 대한 전체 계산(입력 카드의 실시간 표시도 이 안에서 함께 갱신한다).
+  function computeProduct(p) {
+    var c = gatherProductCustomer(p);
+    updateProductPeriodSummary(p, c);
+    var events = gatherWithdrawalEvents(p.withdrawals);
+    var history = computeHistory(c, events);
 
-  function renderReport() {
-    var c = gatherCustomer();
-    updatePeriodSummary(c);
-    var history = computeHistory(c, gatherWithdrawalEvents());
-
-    if (el.historySummary) {
-      if (history) {
-        var breakdown = " (순원금" + (history.netPrincipalEstimated ? "(추정)" : "") + " " + formatWon(history.netPrincipal) +
-          " + 누적이자 " + formatWon(Math.max(0, history.balanceToday - history.netPrincipal)) + ")";
-        el.historySummary.textContent =
-          (history.hasEvents ? "인출 이력 " + history.events.length + "건 반영 · 인출총액 " + formatWon(history.withdrawnTotal) + " · " : "") +
-          "오늘 기준 실제 잔액(세전, 추정) " + formatWon(history.balanceToday) + breakdown;
-      } else {
-        el.historySummary.textContent = "";
-      }
+    var refs = p.refs;
+    if (history) {
+      var breakdown = " (순원금" + (history.netPrincipalEstimated ? "(추정)" : "") + " " + formatWon(history.netPrincipal) +
+        " + 누적이자 " + formatWon(Math.max(0, history.balanceToday - history.netPrincipal)) + ")";
+      refs.historySummaryEl.textContent =
+        (history.hasEvents ? "인출 이력 " + history.events.length + "건 반영 · 인출총액 " + formatWon(history.withdrawnTotal) + " · " : "") +
+        "오늘 기준 실제 잔액(세전, 추정) " + formatWon(history.balanceToday) + breakdown;
+    } else {
+      refs.historySummaryEl.textContent = "";
     }
 
-    var holdSuggestions = updateHoldSuggestion(c);
+    var holdSuggestions = updateHoldSuggestion(p, c);
     var holdSuggestion = holdSuggestions ? holdSuggestions[c.method] : null;
-    var penalty = updatePenalty(c, history);
-    var holdAmount = numVal(el.holdAmount);
+    var penalty = updatePenalty(p, c, history);
+    var holdAmount = parseAmountStr(refs.holdAmountInput.value);
     var holdAmountForCompare = holdAmount === null ? holdSuggestion : holdAmount;
 
-    if (!c.valid || penalty.cancelAmount === null) {
-      el.reportContent.innerHTML = '<p class="report-empty">1~3번 정보를 입력하면 여기에 비교 결과가 표시됩니다.</p>';
-      return;
-    }
-
     var remainYrs = c.remainingYearsClamped;
-
-    // 손익분기 금리: 해지적립금을 잔여기간 동안 이 금리(단리)로 재예치했을 때
-    // 딱 "만기까지 유지 시" 금액과 같아지는 금리. 신상품 제안금리가 이보다
-    // 높아야 재예치가 유리하다.
     var breakEvenRate = null;
     if (holdAmountForCompare !== null && penalty.cancelAmount !== null && penalty.cancelAmount > 0 && remainYrs !== null && remainYrs > 0) {
       breakEvenRate = ((holdAmountForCompare / penalty.cancelAmount) - 1) / remainYrs * 100;
     }
 
-    var rows = state.rows.filter(function (r) {
-      return r.years !== "" && r.years !== null && !isNaN(r.years) && r.rate !== "" && r.rate !== null && !isNaN(r.rate);
-    }).map(function (r) {
-      var maturityAmount = penalty.cancelAmount * (1 + (r.rate / 100) * remainYrs);
-      var ownMaturityDate = addYears(c.today, r.years);
-      var diff = holdAmountForCompare === null ? null : maturityAmount - holdAmountForCompare;
-      var horizonDiffYears = r.years - remainYrs;
-      return {
-        label: r.label || (r.years + "년"), years: r.years, rate: r.rate,
-        ownMaturityDate: ownMaturityDate, maturityAmount: maturityAmount, diff: diff, horizonDiffYears: horizonDiffYears
-      };
-    });
+    var rows = [];
+    if (penalty.cancelAmount !== null && remainYrs !== null) {
+      rows = state.rows.filter(function (r) {
+        return r.years !== "" && r.years !== null && !isNaN(r.years) && r.rate !== "" && r.rate !== null && !isNaN(r.rate);
+      }).map(function (r) {
+        var maturityAmount = penalty.cancelAmount * (1 + (r.rate / 100) * remainYrs);
+        var ownMaturityDate = addYears(c.today, r.years);
+        var diff = holdAmountForCompare === null ? null : maturityAmount - holdAmountForCompare;
+        var horizonDiffYears = r.years - remainYrs;
+        return {
+          label: r.label || (r.years + "년"), years: r.years, rate: r.rate,
+          ownMaturityDate: ownMaturityDate, maturityAmount: maturityAmount, diff: diff, horizonDiffYears: horizonDiffYears
+        };
+      });
+    }
 
     var bestRow = null;
     rows.forEach(function (r) {
       if (bestRow === null || r.maturityAmount > bestRow.maturityAmount) bestRow = r;
     });
 
+    return {
+      product: p, c: c, history: history, penalty: penalty,
+      holdAmount: holdAmount, holdAmountForCompare: holdAmountForCompare,
+      remainYrs: remainYrs, breakEvenRate: breakEvenRate, rows: rows, bestRow: bestRow
+    };
+  }
+
+  // ---------- 결과 요약(리포트) ----------
+  // 비교 기준: 각 기존상품의 만기일. 재예치 금액도 "그 상품의 잔여기간" 동안
+  // 신금리를 적용해 그 상품 만기일 시점 금액으로 환산해서 비교한다.
+
+  function renderReport() {
+    var customerName = el.customerName.value.trim();
+    var todayVal = parseDateUTC(el.todayDate.value);
+
+    var results = state.products.map(computeProduct);
+    var validResults = results.filter(function (r) { return r.c.valid && r.penalty.cancelAmount !== null; });
+
+    if (!validResults.length) {
+      el.reportContent.innerHTML = '<p class="report-empty">기존상품 정보를 입력하면 여기에 비교 결과가 표시됩니다.</p>';
+      return;
+    }
+
     var rm = { name: el.rmName.value.trim(), dept: el.rmDept.value.trim(), contact: el.rmContact.value.trim() };
+    var multi = validResults.length > 1;
 
     var html = "";
 
     // ---- 배너 ----
     html += '<div class="report-banner">';
-    html += '<p class="report-banner-eyebrow">퇴직연금 상품 제안서</p>';
-    html += '<p class="report-title">중도해지 · 재예치 시뮬레이션' + (c.customerName ? " — " + escapeHtml(c.customerName) : "") + '</p>';
-    html += '<p class="report-meta">작성일 ' + formatDateUTC(todayLocalDate()) + ' · 해지(기준)일 ' + formatDateUTC(c.today) + ' · 기존상품 만기일 ' + formatDateUTC(c.maturity) + '</p>';
+    html += '<p class="report-banner-eyebrow">퇴직연금 상품 제안서' + (multi ? " · 기존상품 " + validResults.length + "건" : "") + '</p>';
+    html += '<p class="report-title">중도해지 · 재예치 시뮬레이션' + (customerName ? " — " + escapeHtml(customerName) : "") + '</p>';
+    html += '<p class="report-meta">작성일 ' + formatDateUTC(todayLocalDate()) + (todayVal ? ' · 해지(기준)일 ' + formatDateUTC(todayVal) : '') + '</p>';
     html += '</div>';
+
+    // ---- 합계 KPI (기존상품이 2건 이상일 때만) ----
+    if (multi) {
+      var totalCancel = 0;
+      var totalHold = 0;
+      var holdKnownCount = 0;
+      validResults.forEach(function (r) {
+        totalCancel += r.penalty.cancelAmount;
+        if (r.holdAmountForCompare !== null) { totalHold += r.holdAmountForCompare; holdKnownCount++; }
+      });
+      html += '<div class="report-block"><h3>기존상품 ' + validResults.length + '건 합계</h3>';
+      html += '<div class="kpi-row">';
+      html += kpiTile("총 해지적립금 합계(오늘 기준)", formatWon(totalCancel), "모두 오늘 해지할 경우 재예치 가능한 총액", false);
+      html += kpiTile("총 만기유지 시 합계", formatWon(totalHold), holdKnownCount === validResults.length ? "각 상품 자기 만기일 기준 합계(만기 시점은 상품마다 다름)" : "일부 상품은 정보 부족으로 제외됨", false);
+      html += '</div></div>';
+    }
+
+    // ---- 상품별 리포트 ----
+    validResults.forEach(function (r, idx) {
+      html += buildProductReportSection(r, idx, multi);
+    });
+
+    html += '<p class="report-disclaimer">본 시뮬레이션은 입력하신 정보를 기준으로 한 추정 참고자료이며, 실제 적용금리·세금·수수료 등에 따라 실수령액과 차이가 있을 수 있습니다. 신상품 재예치 금액은 각 기존상품 만기일까지의 잔여기간에 제안금리(단리)를 적용해 환산한 값이며, 상품 자체 만기가 그보다 짧거나 길 경우 이후 재투자 조건은 별도로 확인이 필요합니다. 신상품 제안금리는 안내 시점 기준이며 향후 변동될 수 있습니다.' +
+      (validResults.some(function (r) { return r.history && r.history.hasEvents; }) ? ' 중간인출 이력은 인출액이 원금에서 먼저 차감된 것으로 보수적으로 가정해 계산했으며, 정확한 금액은 상품사 확인이 필요합니다.' : '') +
+      (validResults.some(function (r) { return r.history && r.history.netPrincipalEstimated; }) ? ' 납입원금을 별도로 입력하지 않은 상품은 현재 적립금을 경과기간만큼 할인해 순원금을 추정했습니다. 정확한 납입원금을 입력하시면 더 정확한 패널티 계산이 가능합니다.' : '') +
+      '</p>';
+
+    if (rm.name || rm.dept || rm.contact) {
+      html += '<p class="report-signature">' + [rm.dept, rm.name, rm.contact].filter(Boolean).join(" · ") + "</p>";
+    }
+
+    el.reportContent.innerHTML = html;
+  }
+
+  function buildProductReportSection(r, idx, multi) {
+    var c = r.c, history = r.history, penalty = r.penalty, rows = r.rows, bestRow = r.bestRow;
+    var holdAmountForCompare = r.holdAmountForCompare, remainYrs = r.remainYrs, breakEvenRate = r.breakEvenRate;
+    var html = "";
+
+    html += '<div class="product-report' + (multi ? " product-report-divided" : "") + '">';
+    if (multi) {
+      html += '<h3 class="product-report-title">기존상품 ' + (idx + 1) + (c.label ? ' — ' + escapeHtml(c.label) : '') + '</h3>';
+    }
 
     // ---- KPI 타일 ----
     html += '<div class="kpi-row">';
-    html += kpiTile("만기까지 유지 시", formatWon(holdAmountForCompare), "만기일 " + formatDateUTC(c.maturity) + (holdAmount === null ? " · " + methodLabel(c.method) + " 추정치" : ""), false);
+    html += kpiTile("만기까지 유지 시", formatWon(holdAmountForCompare), "만기일 " + formatDateUTC(c.maturity) + (r.holdAmount === null ? " · " + methodLabel(c.method) + " 추정치" : ""), false);
     html += kpiTile("해지적립금(재예치 원금)", formatWon(penalty.cancelAmount), penalty.penaltyAmount !== null ? "해지패널티 " + formatWon(penalty.penaltyAmount) : (penalty.mode === "direct" ? "직접입력" : ""), false);
     if (breakEvenRate !== null) {
-      html += kpiTile("손익분기 금리", formatPct(breakEvenRate), "신상품이 이 금리보다 높아야 재예치가 유리(잔여 " + formatYears(remainYrs) + " 기준)", false);
+      html += kpiTile("손익분기 금리", formatPct(breakEvenRate), "신상품이 이 금리보다 높아야 재예치가 유리(" + formatDateUTC(c.maturity) + " 기준)", false);
     }
     if (bestRow && bestRow.diff !== null) {
       if (bestRow.diff > 0) {
@@ -544,20 +818,20 @@
     } else if (bestRow) {
       html += kpiTile("최선 재예치 옵션", escapeHtml(bestRow.label), "", false);
     } else {
-      html += kpiTile("추천", "-", "4번에 신상품 금리를 입력하세요", false);
+      html += kpiTile("추천", "-", "3번에 신상품 금리를 입력하세요", false);
     }
     html += '</div>';
 
-    // ---- 비교 그래프: 오늘부터 기존상품 만기일까지, 유지 vs 재예치 궤적을 선으로 ----
+    // ---- 비교 그래프 ----
     if (rows.length && holdAmountForCompare !== null && history && remainYrs > 0) {
-      var diffRows = rows.filter(function (r) { return r.diff !== null; });
+      var diffRows = rows.filter(function (rr) { return rr.diff !== null; });
       if (diffRows.length) {
-        var productLines = diffRows.map(function (r) {
-          return { label: r.label, startVal: penalty.cancelAmount, endVal: r.maturityAmount };
+        var productLines = diffRows.map(function (rr) {
+          return { label: rr.label, startVal: penalty.cancelAmount, endVal: rr.maturityAmount };
         });
         var svg = buildLineChartSvg(history.balanceToday, holdAmountForCompare, c.method, c.rate, remainYrs, productLines, c.maturity);
         if (svg) {
-          html += '<div class="report-block"><h3>오늘 → 기존상품 만기일(' + formatDateUTC(c.maturity) + ') 예상 잔액 추이</h3>';
+          html += '<div class="report-block"><h4>오늘 → 만기일(' + formatDateUTC(c.maturity) + ') 예상 잔액 추이</h4>';
           html += '<div class="line-chart-container">' + svg + '</div>';
           html += '<p class="chart-caption">회색 점선 = 만기까지 유지(오늘 실제 잔액에서 시작) · 파란 실선 = 해지 후 재예치(해지적립금 ' + formatWon(penalty.cancelAmount) + '에서 시작, 선 끝 라벨 = 상품명)</p>';
           html += '</div>';
@@ -566,9 +840,7 @@
     }
 
     // ---- 상세 정보 ----
-    var usingHistoryDisplay = !!history;
-
-    html += '<div class="report-block"><h3>기존상품 정보</h3>';
+    html += '<div class="report-block"><h4>기존상품 정보</h4>';
     html += kv("현재 적립금(명세일자 기준)", formatWon(c.principal));
     if (c.contributionPrincipal !== null) {
       html += kv("납입원금(참고)", formatWon(c.contributionPrincipal));
@@ -581,66 +853,45 @@
     if (history && history.hasEvents) {
       html += kv("중간인출 이력", history.events.length + "건, 인출총액 " + formatWon(history.withdrawnTotal));
     }
-    if (usingHistoryDisplay) {
+    if (history) {
       html += kv("오늘 기준 실제 잔액(세전, 추정)", formatWon(history.balanceToday));
     }
     html += "</div>";
 
-    html += '<div class="report-block"><h3>중도해지 시</h3>';
+    html += '<div class="report-block"><h4>중도해지 시</h4>';
     html += kv("해지방식", penalty.mode === "direct" ? "해지적립금 직접입력" : "적용이율 비율 방식");
     if (penalty.penaltyAmount !== null) html += kv("해지패널티 금액", formatWon(penalty.penaltyAmount));
     html += kv("해지적립금(재예치 원금)", formatWon(penalty.cancelAmount));
     html += "</div>";
 
     if (rows.length) {
-      html += '<div class="report-block"><h3>신상품 재예치 상세 비교 (기존상품 만기일 기준 환산)</h3>';
+      html += '<div class="report-block"><h4>신상품 재예치 상세 비교 (이 상품 만기일 기준 환산)</h4>';
       html += '<div class="table-scroll"><table class="report-table"><thead><tr>' +
-        '<th>신상품</th><th>제안금리</th><th>상품 자체 만기일</th><th>기존 만기일 기준 수령액</th><th>유지 대비</th></tr></thead><tbody>';
-      rows.forEach(function (r) {
-        var isBest = bestRow && r === bestRow;
+        '<th>신상품</th><th>제안금리</th><th>상품 자체 만기일</th><th>이 상품 만기일 기준 수령액</th><th>유지 대비</th></tr></thead><tbody>';
+      rows.forEach(function (rr) {
+        var isBest = bestRow && rr === bestRow;
         var diffCell = "-";
-        if (r.diff !== null) {
-          var badgeClass = r.diff >= 0 ? "better" : "worse";
-          var badgeText = r.diff >= 0 ? "유리" : "불리";
-          diffCell = formatSignedWon(r.diff) + ' <span class="badge ' + badgeClass + '">' + badgeText + "</span>";
+        if (rr.diff !== null) {
+          var badgeClass = rr.diff >= 0 ? "better" : "worse";
+          var badgeText = rr.diff >= 0 ? "유리" : "불리";
+          diffCell = formatSignedWon(rr.diff) + ' <span class="badge ' + badgeClass + '">' + badgeText + "</span>";
         }
         var horizonNote = "";
-        if (Math.abs(r.horizonDiffYears) > 0.05) {
-          horizonNote = '<br><span class="cell-note">(상품기간이 잔여기간보다 ' + formatYears(Math.abs(r.horizonDiffYears)) + (r.horizonDiffYears > 0 ? " 김 — 만기 후 동일금리 재투자 가정" : " 짧음 — 이후 별도 재예치 필요") + ')</span>';
+        if (Math.abs(rr.horizonDiffYears) > 0.05) {
+          horizonNote = '<br><span class="cell-note">(상품기간이 잔여기간보다 ' + formatYears(Math.abs(rr.horizonDiffYears)) + (rr.horizonDiffYears > 0 ? " 김 — 만기 후 동일금리 재투자 가정" : " 짧음 — 이후 별도 재예치 필요") + ')</span>';
         }
-        html += '<tr' + (isBest ? ' class="best-row"' : '') + '><td>' + escapeHtml(r.label) + "</td><td>" + formatPct(r.rate) + "</td><td>" +
-          formatDateUTC(r.ownMaturityDate) + horizonNote +
-          "</td><td>" + formatWon(r.maturityAmount) + "</td><td>" + diffCell + "</td></tr>";
+        html += '<tr' + (isBest ? ' class="best-row"' : '') + '><td>' + escapeHtml(rr.label) + "</td><td>" + formatPct(rr.rate) + "</td><td>" +
+          formatDateUTC(rr.ownMaturityDate) + horizonNote +
+          "</td><td>" + formatWon(rr.maturityAmount) + "</td><td>" + diffCell + "</td></tr>";
       });
       html += "</tbody></table></div></div>";
     }
 
-    html += '<p class="report-disclaimer">본 시뮬레이션은 입력하신 정보를 기준으로 한 ' + methodLabel(c.method) + ' 추정 참고자료이며, 실제 적용금리·세금·수수료 등에 따라 실수령액과 차이가 있을 수 있습니다. 신상품 재예치 금액은 기존상품 만기일까지의 잔여기간에 제안금리(단리)를 적용해 환산한 값이며, 상품 자체 만기가 그보다 짧거나 길 경우 이후 재투자 조건은 별도로 확인이 필요합니다. 신상품 제안금리는 안내 시점 기준이며 향후 변동될 수 있습니다.' +
-      (history && history.hasEvents ? ' 중간인출 이력은 인출액이 원금에서 먼저 차감된 것으로 보수적으로 가정해 계산했으며, 정확한 금액은 상품사 확인이 필요합니다.' : '') +
-      (history && history.netPrincipalEstimated ? ' 납입원금을 별도로 입력하지 않아 현재 적립금을 경과기간만큼 할인해 순원금을 추정했습니다. 정확한 납입원금을 입력하시면 더 정확한 패널티 계산이 가능합니다.' : '') +
-      '</p>';
-
-    if (rm.name || rm.dept || rm.contact) {
-      html += '<p class="report-signature">' + [rm.dept, rm.name, rm.contact].filter(Boolean).join(" · ") + "</p>";
-    }
-
-    el.reportContent.innerHTML = html;
+    html += '</div>';
+    return html;
   }
 
-  function formatWonShort(n) {
-    if (n === null || n === undefined || isNaN(n)) return "-";
-    var v = Math.round(n);
-    var sign = v < 0 ? "-" : "";
-    v = Math.abs(v);
-    if (v >= 100000000) {
-      var eok = v / 100000000;
-      return sign + (Number.isInteger(eok) ? eok : eok.toFixed(1)) + "억";
-    }
-    if (v >= 10000) return sign + Math.round(v / 10000).toLocaleString("ko-KR") + "만";
-    return sign + v.toLocaleString("ko-KR");
-  }
-
-  // 오늘(t=0) → 기존상품 만기일(t=remainYrs)까지, "유지"는 곡선(선택한 이자계산방식),
+  // 오늘(t=0) → 만기일(t=remainYrs)까지, "유지"는 곡선(선택한 이자계산방식),
   // 각 신상품 재예치 옵션은 단리라 정확히 직선이므로 시작/끝 두 점으로 그린다.
   function buildLineChartSvg(startMaintain, endMaintain, method, ratePct, remainYrs, productLines, maturityDate) {
     if (!isFinite(startMaintain) || !isFinite(endMaintain) || remainYrs <= 0) return "";
@@ -687,9 +938,9 @@
 
     // 끝점 라벨들이 서로 겹치지 않도록, y좌표 기준으로 정렬한 뒤 최소 간격을 확보한다.
     // (선/점은 실제 값 위치에 그대로 두고, 텍스트 라벨만 세로로 살짝씩 밀어낸다.)
-    var labelEntries = [{ key: "__maintain__", label: "유지", y: yPix(endMaintain), cls: "lc-end-label-maintain" }];
+    var labelEntries = [{ key: "__maintain__", label: "유지", y: yPix(endMaintain) }];
     productLines.forEach(function (pl, idx) {
-      labelEntries.push({ key: "p" + idx, label: pl.label, y: yPix(pl.endVal), cls: "lc-end-label-product" });
+      labelEntries.push({ key: "p" + idx, label: pl.label, y: yPix(pl.endVal) });
     });
     labelEntries.sort(function (a, b) { return a.y - b.y; });
     var MIN_GAP = 11;
@@ -698,7 +949,6 @@
         labelEntries[li].y = labelEntries[li - 1].y + MIN_GAP;
       }
     }
-    // 맨 아래 라벨이 그래프 밖으로 밀려났으면, 전체를 위로 당겨서 안에 들어오게 한다.
     var overflow = labelEntries[labelEntries.length - 1].y - (H - 6);
     if (overflow > 0) {
       labelEntries.forEach(function (le) { le.y -= overflow; });
@@ -733,73 +983,28 @@
 
   // ---------- 초기화/이벤트 ----------
 
-  function resetCustomerFields() {
+  function resetAll() {
     el.customerName.value = "";
-    el.principal.value = "";
-    el.contributionPrincipal.value = "";
-    el.startDate.value = "";
-    el.maturityDate.value = "";
-    el.contractRate.value = "";
-    el.interestMethod.value = "compoundYear";
     el.todayDate.value = formatDateUTC(todayLocalDate());
-    el.holdAmount.value = "";
-    el.modeDirect.checked = true;
-    el.directCancelAmount.value = "";
-    el.directPenaltyAmount.value = "";
-    el.appliedRatePct.value = "";
-    state.withdrawals = [];
-    renderWithdrawalRows();
+    el.existingProducts.innerHTML = "";
+    state.products = [];
+    addProduct();
     renderReport();
   }
 
   function bindEvents() {
-    [
-      "customerName", "principal", "contributionPrincipal", "startDate", "maturityDate", "contractRate", "todayDate",
-      "holdAmount", "directCancelAmount", "directPenaltyAmount", "appliedRatePct"
-    ].forEach(function (id) {
-      el[id].addEventListener("input", renderReport);
-    });
+    el.customerName.addEventListener("input", renderReport);
+    el.todayDate.addEventListener("input", renderReport);
 
-    el.interestMethod.addEventListener("change", renderReport);
-    el.modeDirect.addEventListener("change", renderReport);
-    el.modeRatio.addEventListener("change", renderReport);
-
-    document.querySelectorAll(".term-quick-btn").forEach(function (btn) {
-      btn.addEventListener("click", function () {
-        var start = parseDateUTC(el.startDate.value);
-        if (!start) {
-          alert("먼저 명세일자를 입력해주세요.");
-          return;
-        }
-        var years = parseFloat(btn.getAttribute("data-term-years"));
-        el.maturityDate.value = formatDateUTC(addYears(start, years));
-        renderReport();
-      });
-    });
-
-    document.querySelectorAll(".suggest-use-btn").forEach(function (button) {
-      var method = button.getAttribute("data-method");
-      button.addEventListener("click", function () {
-        el.interestMethod.value = method;
-        var c = gatherCustomer();
-        var s = updateHoldSuggestion(c);
-        if (s && s[method] !== null && !isNaN(s[method])) {
-          setAmountValue(el.holdAmount, s[method]);
-          renderReport();
-        }
-      });
+    el.addExistingProduct.addEventListener("click", function () {
+      addProduct();
+      renderReport();
     });
 
     el.addProductRow.addEventListener("click", function () {
       addRow();
       saveRows();
       renderRows();
-      renderReport();
-    });
-
-    el.addWithdrawalRow.addEventListener("click", function () {
-      addWithdrawalRow();
-      renderWithdrawalRows();
       renderReport();
     });
 
@@ -815,8 +1020,8 @@
     });
 
     el.resetBtn.addEventListener("click", function () {
-      if (confirm("고객/상품 정보를 모두 지울까요? (신상품 금리 목록과 작성자 정보는 유지됩니다)")) {
-        resetCustomerFields();
+      if (confirm("고객/기존상품 정보를 모두 지울까요? (신상품 금리 목록과 작성자 정보는 유지됩니다)")) {
+        resetAll();
       }
     });
   }
@@ -824,12 +1029,8 @@
   function init() {
     cacheEls();
 
-    bindDateMask(el.startDate, el.maturityDate);
-    bindDateMask(el.maturityDate, el.todayDate);
     bindDateMask(el.todayDate, null);
     el.todayDate.value = formatDateUTC(todayLocalDate());
-
-    [el.principal, el.contributionPrincipal, el.holdAmount, el.directCancelAmount, el.directPenaltyAmount].forEach(bindAmountMask);
 
     state.rows = loadRows().map(function (r) {
       return { id: state.nextId++, label: r.label, years: r.years, rate: r.rate };
@@ -841,7 +1042,7 @@
     el.rmContact.value = rm.contact || "";
 
     renderRows();
-    renderWithdrawalRows();
+    addProduct();
     bindEvents();
     renderReport();
   }

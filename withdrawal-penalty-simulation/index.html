@@ -14,129 +14,34 @@
 
 <main>
 
-  <section class="card no-print" id="customerInfo">
-    <h2><span class="step-badge">1</span>고객/기존상품 정보</h2>
+  <section class="card no-print" id="basicInfo">
+    <h2><span class="step-badge">1</span>고객 정보</h2>
     <div class="mapping-grid">
       <label>고객명(또는 단체명) — 선택
         <input type="text" id="customerName" placeholder="예: 홍길동 고객님 / OO주식회사" />
       </label>
-
-      <label>현재 적립금(원)
-        <input type="text" id="principal" placeholder="예: 100,000,000" />
-      </label>
-
-      <label>납입원금(선택 — 알고 있으면 해지패널티 계산이 더 정확해집니다. 모르면 비워두세요)
-        <input type="text" id="contributionPrincipal" />
-      </label>
-
-      <div class="two-col">
-        <label>명세일자
-          <input type="text" id="startDate" />
-        </label>
-        <label>만기일
-          <input type="text" id="maturityDate" />
-        </label>
-      </div>
-      <div class="term-quick">
-        <span class="term-quick-label">만기일 빠른 설정(명세일자 + 기간, 직접입력도 그대로 가능):</span>
-        <div class="term-quick-buttons">
-          <button type="button" class="btn small term-quick-btn" data-term-years="1">1년</button>
-          <button type="button" class="btn small term-quick-btn" data-term-years="2">2년</button>
-          <button type="button" class="btn small term-quick-btn" data-term-years="2.5">2.5년</button>
-          <button type="button" class="btn small term-quick-btn" data-term-years="3">3년</button>
-          <button type="button" class="btn small term-quick-btn" data-term-years="5">5년</button>
-        </div>
-      </div>
-      <div class="two-col">
-        <label>약정금리(연 %)
-          <input type="number" id="contractRate" min="0" step="0.01" placeholder="예: 3.5" />
-        </label>
-        <label>이자계산방식
-          <select id="interestMethod">
-            <option value="compoundYear" selected>연복리</option>
-            <option value="simple">연단리</option>
-            <option value="compoundMonth">월복리</option>
-          </select>
-        </label>
-      </div>
       <label>해지(오늘) 기준일
         <input type="text" id="todayDate" />
       </label>
     </div>
-    <p class="hint" id="periodSummary"></p>
-
-    <div class="withdrawal-history">
-      <p class="hint"><strong>중간인출 이력(선택)</strong> — 명세일자 이후 퇴직금 등으로 실제 인출된 금액이 있으면 추가하세요. 있으면 "만기까지 유지 시"와 "중도해지 시" 계산에 자동 반영됩니다(보수적으로 원금에서 먼저 차감되는 것으로 계산).</p>
-      <div id="withdrawalRows"></div>
-      <button type="button" id="addWithdrawalRow" class="btn small">+ 인출 이력 추가</button>
-      <p class="hint" id="historySummary"></p>
-    </div>
   </section>
 
-  <section class="card no-print" id="holdOption">
-    <h2><span class="step-badge">2</span>만기까지 유지할 경우</h2>
-    <div class="mapping-grid">
-      <label>만기 시 예상 수령액(원)
-        <input type="text" id="holdAmount" placeholder="시스템 조회값 또는 아래 참고값 사용" />
-      </label>
-    </div>
-    <p class="hint">아래에서 이자계산방식을 골라 사용하세요(기본값 연복리). 고르면 1번의 "이자계산방식"도 함께 바뀌어, 해지 시 패널티 계산에도 같은 방식이 일관되게 적용됩니다.</p>
-    <div class="suggest-list">
-      <div class="suggest-row">
-        <span class="suggest-label">연단리</span>
-        <span class="suggest-value" id="suggestSimple">-</span>
-        <button type="button" class="btn small suggest-use-btn" data-method="simple">사용</button>
-      </div>
-      <div class="suggest-row">
-        <span class="suggest-label">연복리</span>
-        <span class="suggest-value" id="suggestCompoundYear">-</span>
-        <button type="button" class="btn small suggest-use-btn" data-method="compoundYear">사용</button>
-      </div>
-      <div class="suggest-row">
-        <span class="suggest-label">월복리</span>
-        <span class="suggest-value" id="suggestCompoundMonth">-</span>
-        <button type="button" class="btn small suggest-use-btn" data-method="compoundMonth">사용</button>
-      </div>
-    </div>
-  </section>
-
-  <section class="card no-print" id="penaltySection">
-    <h2><span class="step-badge">3</span>중도해지 패널티</h2>
-    <p class="hint">당사 상품처럼 해지패널티/해지적립금을 정확히 알 수 있으면 "직접입력", 타사 신탁상품처럼 "중도해지 시 적용이율이 약정금리의 80%" 식으로만 아는 경우 "적용이율 비율"을 사용하세요.</p>
-
-    <div class="radio-row">
-      <label><input type="radio" name="penaltyMode" id="modeDirect" value="direct" checked /> 해지적립금 직접입력</label>
-      <label><input type="radio" name="penaltyMode" id="modeRatio" value="ratio" /> 적용이율 비율로 계산</label>
-    </div>
-
-    <div id="directModeFields" class="mapping-grid">
-      <label>해지적립금(패널티 차감 후, 재예치 가능 금액, 원)
-        <input type="text" id="directCancelAmount" />
-      </label>
-      <label>해지패널티 금액(원) — 선택, 참고용
-        <input type="text" id="directPenaltyAmount" />
-      </label>
-    </div>
-
-    <div id="ratioModeFields" class="mapping-grid hidden">
-      <label>중도해지 시 적용이율 비율(%, 약정금리 대비)
-        <input type="number" id="appliedRatePct" min="0" max="100" step="1" placeholder="예: 80" />
-      </label>
-      <p class="hint" id="ratioModeCalc"></p>
-    </div>
-
-    <p class="result-line">해지적립금(재예치 원금): <strong id="cancelAmountResult">-</strong></p>
+  <section class="card no-print" id="productsSection">
+    <h2><span class="step-badge">2</span>기존상품 (여러 건이면 추가 가능)</h2>
+    <p class="hint">고객이 가진 기존상품이 여러 건이면 "+ 기존상품 추가"로 늘려서, 상품별로 각각 비교하고 합계도 함께 볼 수 있습니다. 상품마다 만기일·금리·해지패널티 방식을 따로 입력합니다.</p>
+    <div id="existingProducts"></div>
+    <button type="button" id="addExistingProduct" class="btn small">+ 기존상품 추가</button>
   </section>
 
   <section class="card no-print" id="newProductsSection">
-    <h2><span class="step-badge">4</span>신상품 재예치 제안금리</h2>
+    <h2><span class="step-badge">3</span>신상품 재예치 제안금리</h2>
     <p class="hint">기간/금리는 시기·거래처마다 다르므로 매번 직접 입력하세요. 필요 없는 기간은 삭제, 필요하면 추가할 수 있습니다.</p>
     <div id="newProductRows"></div>
     <button type="button" id="addProductRow" class="btn small">+ 기간 추가</button>
   </section>
 
   <section class="card no-print" id="rmInfoSection">
-    <h2><span class="step-badge">5</span>작성자 정보 (선택, 문서 하단에 표시)</h2>
+    <h2><span class="step-badge">4</span>작성자 정보 (선택, 문서 하단에 표시)</h2>
     <div class="mapping-grid">
       <label>이름 <input type="text" id="rmName" placeholder="예: 구태형" /></label>
       <div class="two-col">
