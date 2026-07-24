@@ -604,6 +604,28 @@
             alert("이 파일을 열 수 없습니다. 비밀번호가 걸려 있거나 지원하지 않는 형식일 수 있습니다.");
             return;
           }
+
+          // 1) "헤더 한 줄 + 상품별 데이터행" 표 형식 먼저 시도(당사 시스템 다건 조회 자료 등).
+          //    행이 여러 개면 첫 행은 이 카드에, 나머지는 새 상품카드를 자동으로 추가해 채운다.
+          var tableRecords = extractTableRecordsFromSheets(sheets);
+          if (tableRecords.length) {
+            var targets = tableRecords.map(function (rec, idx) {
+              var targetProduct = idx === 0 ? p : addProduct();
+              var applied = applyExtractedFields(targetProduct, tableRecordToExtracted(rec));
+              updateProductPenaltyModeUI(targetProduct);
+              return { product: targetProduct, applied: applied };
+            });
+            targets[0].product.attachments.push({ id: state.nextId++, kind: "excel", name: file.name, sheets: sheets, appliedFields: targets[0].applied });
+            renderProductAttachments(targets[0].product);
+            targets.forEach(function (t, idx) {
+              renderAutofillSummary(t.product, t.applied, file.name, targets.length, idx);
+            });
+            updateProductChrome();
+            renderReport();
+            return;
+          }
+
+          // 2) 표 형식이 아니면 "라벨: 값" 형식으로 시도(타사 상품 캡처 자료 등).
           var extracted = extractFieldsFromSheets(sheets);
           var applied = applyExtractedFields(p, extracted);
           p.attachments.push({ id: state.nextId++, kind: "excel", name: file.name, sheets: sheets, appliedFields: applied });
@@ -779,9 +801,95 @@
     return results;
   }
 
+  // ---------- 첨부 엑셀/CSV의 "표(헤더+데이터행)" 형식 인식 ----------
+  // 당사 시스템 등에서 뽑는 자료는 라벨:값 쌍이 아니라 "가입자번호 | 상품명 | 명세일자 | 적립금 | ..."
+  // 처럼 헤더 한 줄 + 상품별 데이터행 여러 줄로 되어 있는 경우가 많다. 이 경우 헤더의 열 위치를
+  // 찾아서, 데이터행 하나당 기존상품 한 건으로 처리한다(행이 여러 개면 상품카드도 여러 개로 자동 추가).
+  var TABLE_HEADER_FIELD_SPECS = [
+    { field: "label", type: "text", displayLabel: "상품명", headers: ["상품명"] },
+    { field: "startDate", type: "date", displayLabel: "명세일자", headers: ["명세일자", "기준일자", "산출기준일"] },
+    { field: "maturityDate", type: "date", displayLabel: "만기일", headers: ["만기일자", "만기일"] },
+    { field: "principal", type: "amount", displayLabel: "현재 적립금", headers: ["적립금", "현재적립금", "평가금액"] },
+    { field: "contributionPrincipal", type: "amount", displayLabel: "납입원금", headers: ["납입원금", "납입원본", "가입원금"] },
+    { field: "contractRate", type: "rate", displayLabel: "약정금리(명세 적용이율)", headers: ["명세적용이율", "적용이율", "약정금리", "계약금리", "적용금리"] },
+    { field: "directCancelAmount", type: "amount", displayLabel: "해지적립금(해지환급금)", headers: ["해지환급금", "해지적립금", "해지후적립금", "재예치가능금액"] },
+    { field: "directPenaltyAmount", type: "amount", displayLabel: "해지패널티 금액", headers: ["중도해지페널티", "중도해지패널티", "해지패널티", "해지패널티금액", "패널티"] }
+  ];
+
+  function findTableHeaderColumnMap(row) {
+    var map = {};
+    var matchCount = 0;
+    row.forEach(function (cell, ci) {
+      var norm = normalizeLabelText(cell);
+      if (!norm) return;
+      TABLE_HEADER_FIELD_SPECS.forEach(function (spec) {
+        if (map[spec.field] !== undefined) return;
+        if (spec.headers.indexOf(norm) !== -1) {
+          map[spec.field] = ci;
+          matchCount++;
+        }
+      });
+    });
+    return matchCount >= 3 ? map : null;
+  }
+
+  function convertCellValueByType(raw, type) {
+    if (raw === undefined || raw === null || String(raw).trim() === "") return null;
+    if (type === "text") return String(raw).trim();
+    if (type === "amount") {
+      var digits = String(raw).replace(/[^\d]/g, "");
+      return digits ? parseInt(digits, 10) : null;
+    }
+    if (type === "date") return parseFlexibleDateToMasked(raw);
+    if (type === "rate") {
+      var m = /(\d+(\.\d+)?)/.exec(String(raw));
+      return m ? parseFloat(m[1]) : null;
+    }
+    return null;
+  }
+
+  function extractTableRecordsFromSheets(sheets) {
+    var records = [];
+    sheets.forEach(function (sheet) {
+      var rows = sheet.rows;
+      for (var ri = 0; ri < rows.length; ri++) {
+        var map = findTableHeaderColumnMap(rows[ri]);
+        if (!map) continue;
+        for (var dr = ri + 1; dr < rows.length; dr++) {
+          var row = rows[dr];
+          var rec = {};
+          var any = false;
+          Object.keys(map).forEach(function (field) {
+            var spec = TABLE_HEADER_FIELD_SPECS.filter(function (s) { return s.field === field; })[0];
+            var val = convertCellValueByType(row[map[field]], spec.type);
+            if (val !== null) {
+              rec[field] = val;
+              any = true;
+            }
+          });
+          if (!any) break;
+          records.push(rec);
+        }
+        break; // 시트당 표 하나만 처리
+      }
+    });
+    return records;
+  }
+
+  function tableRecordToExtracted(rec) {
+    var extracted = {};
+    TABLE_HEADER_FIELD_SPECS.forEach(function (spec) {
+      if (rec[spec.field] !== undefined) {
+        extracted[spec.field] = { label: spec.displayLabel, value: rec[spec.field] };
+      }
+    });
+    return extracted;
+  }
+
   function applyExtractedFields(p, extracted) {
     var refs = p.refs;
     var fieldToInput = {
+      label: refs.labelInput,
       principal: refs.principalInput,
       contributionPrincipal: refs.contributionPrincipalInput,
       startDate: refs.startDateInput,
@@ -795,7 +903,7 @@
       var input = fieldToInput[field];
       if (!input) return;
       var item = extracted[field];
-      if (field === "startDate" || field === "maturityDate" || field === "contractRate") {
+      if (field === "startDate" || field === "maturityDate" || field === "contractRate" || field === "label") {
         input.value = item.value;
       } else {
         setAmountValue(input, item.value);
@@ -808,18 +916,23 @@
     return applied;
   }
 
-  function renderAutofillSummary(p, applied, fileName) {
+  function renderAutofillSummary(p, applied, fileName, totalRecords, recordIndex) {
     var box = p.refs.autofillSummaryEl;
     if (!box) return;
+    var multiNote = "";
+    if (totalRecords && totalRecords > 1) {
+      multiNote = '<p class="autofill-multi-note">이 파일에서 상품 정보 ' + totalRecords + '건을 인식했습니다. 이 카드에는 ' + (recordIndex + 1) + '번째 항목을 채웠습니다' +
+        (recordIndex === 0 ? ' (나머지 ' + (totalRecords - 1) + '건은 새 상품카드로 자동 추가되었습니다).' : '.') + '</p>';
+    }
     if (!applied || !applied.length) {
-      box.innerHTML =
+      box.innerHTML = multiNote +
         '<div class="autofill-note autofill-none">"' + escapeHtml(fileName) + '"에서 자동으로 인식된 항목이 없습니다. 아래 항목을 직접 입력해주세요.</div>';
       return;
     }
     var itemsHtml = applied.map(function (a) {
       return '<li><strong>' + escapeHtml(a.label) + '</strong> → ' + escapeHtml(String(a.display)) + '</li>';
     }).join("");
-    box.innerHTML =
+    box.innerHTML = multiNote +
       '<div class="autofill-note autofill-ok">' +
         '<p><strong>"' + escapeHtml(fileName) + '"에서 ' + applied.length + '개 항목을 자동으로 채웠습니다.</strong> 아래에서 값을 확인하고, 필요하면 직접 수정하세요.</p>' +
         '<ul>' + itemsHtml + '</ul>' +
