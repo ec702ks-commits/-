@@ -334,7 +334,7 @@
   // ---------- 기존상품(명세) : 여러 건 지원 ----------
 
   function createProduct() {
-    return { id: state.nextId++, withdrawals: [], attachments: [], refs: {}, holdAmountManual: false };
+    return { id: state.nextId++, withdrawals: [], attachments: [], refs: {}, holdAmountManual: false, principalAsOfDate: null };
   }
 
   // 상품 카드는 추가될 때 딱 한 번만 DOM에 생성되고, 이후 renderReport()가
@@ -909,9 +909,11 @@
 
   // 표 형식 자료(당사 시스템 자료)를 상품카드에 적용한다. 만기일 컬럼이 없어도
   // 상품명에 "OO년"처럼 기간이 들어있으면 "명세일자(계약일)" + 기간으로 만기일을 자동 계산한다.
-  // 계산기의 "명세일자" 입력칸에는 계약일이 아니라 "적립금기준일자"를 넣는다 — 적립금 값
-  // 자체가 이미 그 날짜(대개 오늘) 기준이므로, 계약일을 넣으면 그 사이 기간만큼 이자가
-  // 이중으로 계산돼 "오늘 기준 잔액"과 "만기 예상액"이 부풀려지는 문제가 있었다.
+  // 계산기의 "명세일자" 입력칸에는 실제 명세일자(계약일) 그대로 넣는다(화면에 보이는
+  // 값과 원본 자료가 달라 보이면 안 되므로). 대신 "적립금기준일자"는 화면에는 표시하지
+  // 않고 내부적으로만 저장해서(product.principalAsOfDate) 경과이자 계산에 쓴다 — 적립금
+  // 값 자체가 이미 그 날짜(대개 오늘) 기준이므로, 명세일자를 기준으로 다시 이자를 붙이면
+  // "오늘 기준 잔액"과 "만기 예상액"이 이중으로 부풀려지는 문제가 있었다.
   // 당사 보험 상품은 만기 예상액(만기까지 유지 시) 계산에 연복리를 적용한다.
   function applyTableRecordToProduct(targetProduct, rec) {
     var extracted = tableRecordToExtracted(rec);
@@ -929,12 +931,15 @@
       }
     }
 
-    // 적립금기준일자 컬럼이 없는 파일은 명세일자를 대신 적립금 기준일로 사용(하위 호환).
-    if (!extracted.asOfDate && extracted.contractDate) {
-      extracted.asOfDate = extracted.contractDate;
-    }
+    var asOfDateValue = extracted.asOfDate ? extracted.asOfDate.value : null;
+    delete extracted.asOfDate;
 
     var applied = applyExtractedFields(targetProduct, extracted);
+
+    targetProduct.principalAsOfDate = asOfDateValue;
+    if (asOfDateValue) {
+      applied.push({ field: "asOfDate", label: "적립금기준일자(경과이자 계산 기준, 화면에는 표시 안 됨)", display: asOfDateValue });
+    }
 
     if (targetProduct.refs.methodSelect.value !== "compoundYear") {
       targetProduct.refs.methodSelect.value = "compoundYear";
@@ -951,7 +956,7 @@
       principal: refs.principalInput,
       contributionPrincipal: refs.contributionPrincipalInput,
       startDate: refs.startDateInput,
-      asOfDate: refs.startDateInput,
+      contractDate: refs.startDateInput,
       maturityDate: refs.maturityDateInput,
       contractRate: refs.contractRateInput,
       directCancelAmount: refs.directCancelAmountInput,
@@ -962,7 +967,7 @@
       var input = fieldToInput[field];
       if (!input) return;
       var item = extracted[field];
-      if (field === "startDate" || field === "asOfDate" || field === "maturityDate" || field === "contractRate" || field === "label") {
+      if (field === "startDate" || field === "contractDate" || field === "maturityDate" || field === "contractRate" || field === "label") {
         input.value = item.value;
       } else {
         setAmountValue(input, item.value);
@@ -1027,13 +1032,19 @@
     var today = parseDateUTC(el.todayDate.value);
     var contributionPrincipal = parseAmountStr(refs.contributionPrincipalInput.value);
 
+    // 표 형식 자동입력에서는 "적립금이 실제 산정된 날짜"(적립금기준일자)가 화면에 보이는
+    // 명세일자와 다를 수 있다. 그 경우에도 명세일자 칸에는 실제 명세일자를 그대로 보여주되,
+    // 경과이자 계산(오늘까지 잔액을 불리는 기준)에는 principalAsOfDate를 대신 사용해서
+    // 이미 최신 값인 적립금에 이자가 이중으로 붙지 않게 한다.
+    var principalAsOf = (p.principalAsOfDate && parseDateUTC(p.principalAsOfDate)) || start;
+
     var totalYears = yearsBetween(start, maturity);
-    var elapsedYears = yearsBetween(start, today);
+    var elapsedYears = yearsBetween(principalAsOf, today);
     var remainingYears = yearsBetween(today, maturity);
 
     return {
       label: refs.labelInput.value.trim(),
-      principal: principal, start: start, maturity: maturity, rate: rate, method: method, today: today,
+      principal: principal, start: principalAsOf, contractStart: start, maturity: maturity, rate: rate, method: method, today: today,
       contributionPrincipal: contributionPrincipal,
       totalYears: totalYears, elapsedYears: elapsedYears, remainingYears: remainingYears,
       remainingYearsClamped: remainingYears === null ? null : Math.max(0, remainingYears),
@@ -1048,8 +1059,13 @@
       return;
     }
     var parts = [];
-    if (c.totalYears !== null) parts.push("전체기간 " + formatYears(c.totalYears));
-    if (c.elapsedYears !== null) parts.push("경과기간 " + formatYears(c.elapsedYears));
+    if (c.totalYears !== null) parts.push("전체기간(명세일자 기준) " + formatYears(c.totalYears));
+    var asOfDiffers = c.contractStart && Math.abs(c.start.getTime() - c.contractStart.getTime()) > 24 * 3600 * 1000;
+    if (asOfDiffers) {
+      parts.push("적립금 산정일 " + formatDateUTC(c.start) + "(경과 " + formatYears(c.elapsedYears) + ")");
+    } else if (c.elapsedYears !== null) {
+      parts.push("경과기간 " + formatYears(c.elapsedYears));
+    }
     if (c.remainingYears !== null) parts.push("잔여기간 " + formatYears(c.remainingYears));
     elp.textContent = parts.join(" · ");
   }
@@ -1314,16 +1330,21 @@
     }
 
     // ---- 상세 정보 ----
+    var asOfDiffers = c.contractStart && Math.abs(c.start.getTime() - c.contractStart.getTime()) > 24 * 3600 * 1000;
     html += '<div class="report-block"><h4>기존상품 정보</h4>';
-    html += kv("현재 적립금(명세일자 기준)", formatWon(c.principal));
+    html += kv(asOfDiffers ? "현재 적립금(적립금 산정일 " + formatDateUTC(c.start) + " 기준)" : "현재 적립금(명세일자 기준)", formatWon(c.principal));
     if (c.contributionPrincipal !== null) {
       html += kv("납입원금(참고)", formatWon(c.contributionPrincipal));
     } else if (history && history.netPrincipalEstimated) {
       html += kv("납입원금(추정)", formatWon(history.netPrincipal));
     }
-    html += kv("명세일자 → 만기일", formatDateUTC(c.start) + " → " + formatDateUTC(c.maturity));
+    html += kv("명세일자 → 만기일", formatDateUTC(c.contractStart || c.start) + " → " + formatDateUTC(c.maturity));
     html += kv("약정금리(연) / 이자계산방식", formatPct(c.rate) + " / " + methodLabel(c.method));
-    html += kv("전체기간 / 경과기간 / 잔여기간", formatYears(c.totalYears) + " / " + formatYears(c.elapsedYears) + " / " + formatYears(c.remainingYears));
+    if (asOfDiffers) {
+      html += kv("전체기간(명세일자 기준) / 잔여기간", formatYears(c.totalYears) + " / " + formatYears(c.remainingYears));
+    } else {
+      html += kv("전체기간 / 경과기간 / 잔여기간", formatYears(c.totalYears) + " / " + formatYears(c.elapsedYears) + " / " + formatYears(c.remainingYears));
+    }
     if (history && history.hasEvents) {
       html += kv("중간인출 이력", history.events.length + "건, 인출총액 " + formatWon(history.withdrawnTotal));
     }
