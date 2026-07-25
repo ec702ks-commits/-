@@ -1371,8 +1371,16 @@
     html += '<div class="kpi-row">';
     html += kpiTile("만기까지 유지 시", formatWon(holdAmountForCompare), "만기일 " + formatDateUTC(c.maturity) + (r.holdAmount === null ? " · " + methodLabel(c.method) + " 추정치" : ""), false);
     html += kpiTile("해지적립금(재예치 원금)", formatWon(penalty.cancelAmount), penalty.penaltyAmount !== null ? "해지패널티 " + formatWon(penalty.penaltyAmount) : (penalty.mode === "direct" ? "직접입력" : ""), false);
+    if (bestRow) {
+      html += kpiTile(
+        "재예치 시(기존상품 만기 기준)",
+        formatWon(bestRow.maturityAmount),
+        bestRow.label + " · 제안금리 " + formatPct(bestRow.rate) + " 가정 · " + formatDateUTC(c.maturity) + " 시점 환산액",
+        false
+      );
+    }
     if (breakEvenRate !== null) {
-      html += kpiTile("손익분기 금리", formatPct(breakEvenRate), "신상품이 이 금리보다 높아야 재예치가 유리(" + formatDateUTC(c.maturity) + " 기준)", false);
+      html += kpiTile("손익분기 금리", formatPct(breakEvenRate), "오늘 재예치해서 " + formatDateUTC(c.maturity) + "(기존상품 만기)까지 운용할 경우, 신상품 금리가 이 값 이상이어야 재예치가 유리", false);
     }
     html += '</div>';
 
