@@ -19,6 +19,7 @@
   --danger: #d03b3b;
   --badge-better-bg: #e3f6e3;
   --badge-worse-bg: #fbe6e6;
+  --badge-hold-bg: #e3ecfb;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -43,6 +44,7 @@
     --danger: #d03b3b;
     --badge-better-bg: #16301a;
     --badge-worse-bg: #3a1d1d;
+    --badge-hold-bg: #182645;
   }
 }
 
@@ -67,6 +69,7 @@
   --danger: #d03b3b;
   --badge-better-bg: #16301a;
   --badge-worse-bg: #3a1d1d;
+  --badge-hold-bg: #182645;
 }
 
 :root[data-theme="light"] {
@@ -90,6 +93,7 @@
   --danger: #d03b3b;
   --badge-better-bg: #e3f6e3;
   --badge-worse-bg: #fbe6e6;
+  --badge-hold-bg: #e3ecfb;
 }
 
 * { box-sizing: border-box; }
@@ -640,6 +644,7 @@ footer {
   --danger: #d03b3b;
   --badge-better-bg: #e3f6e3;
   --badge-worse-bg: #fbe6e6;
+  --badge-hold-bg: #e3ecfb;
   background: #ffffff;
   color: #131b2b;
 }
@@ -815,64 +820,151 @@ footer {
   color: var(--text-muted);
 }
 
-.line-chart-container {
-  width: 100%;
-  overflow-x: auto;
+.compare-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
-.line-chart-svg {
-  width: 100%;
-  height: auto;
-  min-width: 420px;
-  display: block;
-  font-family: inherit;
+.compare-row {
+  padding: 8px 0;
 }
 
-.lc-grid {
-  stroke: var(--border);
-  stroke-width: 1;
+.compare-best {
+  padding: 8px;
+  margin: 0 -8px;
+  background: var(--gold-soft);
+  border-radius: 8px;
 }
 
-.lc-axis-label {
-  fill: var(--text-muted);
-  font-size: 9.5px;
+.compare-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 5px;
 }
 
-.lc-line {
-  fill: none;
-  stroke-width: 2.2;
-}
-
-.lc-line-maintain {
-  stroke: var(--text-muted);
-  stroke-dasharray: 5 4;
-}
-
-.lc-line-product {
-  stroke: var(--primary);
-}
-
-.lc-dot-maintain {
-  fill: var(--text-muted);
-}
-
-.lc-dot-product {
-  fill: var(--primary);
-}
-
-.lc-end-label {
-  font-size: 10.5px;
+.compare-name {
+  font-size: 0.86rem;
   font-weight: 700;
+  color: var(--text);
 }
 
-.lc-end-label-maintain {
-  fill: var(--text);
+.compare-sub {
+  font-size: 0.74rem;
+  color: var(--text-muted);
 }
 
-.lc-end-label-product {
-  fill: var(--navy-900);
+.compare-track {
+  position: relative;
+  height: 18px;
+  background: var(--table-header-bg);
+  border-radius: 4px;
+  overflow: hidden;
 }
 
+.compare-zero {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--border);
+}
+
+.compare-bar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 3px;
+}
+
+.compare-bar.better {
+  background: var(--success);
+}
+
+.compare-bar.worse {
+  background: var(--danger);
+}
+
+.compare-diff {
+  margin-top: 4px;
+  font-size: 0.9rem;
+  font-weight: 800;
+  text-align: right;
+}
+
+.conclusion-summary {
+  background: var(--tile-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.conclusion-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.conclusion-item {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.conclusion-item-top {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+}
+
+.conclusion-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--navy-900);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.conclusion-title {
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: var(--text);
+  flex: 1;
+  min-width: 0;
+}
+
+.conclusion-item-diff {
+  margin-top: 4px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-align: right;
+}
+
+.badge.hold {
+  background: var(--badge-hold-bg);
+  color: var(--primary);
+}
+
+.badge.neutral {
+  background: var(--table-header-bg);
+  color: var(--text-muted);
+}
+
+.better { color: var(--success); }
+.worse { color: var(--danger); }
+.hold { color: var(--primary); }
+.neutral { color: var(--text-muted); }
 
 .report-kv {
   display: flex;
@@ -997,6 +1089,7 @@ footer {
     --table-header-bg: #f5f7fb;
     --badge-better-bg: #e3f6e3;
     --badge-worse-bg: #fbe6e6;
+    --badge-hold-bg: #e3ecfb;
     --success: #0ca30c;
     --danger: #d03b3b;
   }

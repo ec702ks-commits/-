@@ -155,19 +155,6 @@
     return (Math.round(n * 100) / 100) + "년";
   }
 
-  function formatWonShort(n) {
-    if (n === null || n === undefined || isNaN(n)) return "-";
-    var v = Math.round(n);
-    var sign = v < 0 ? "-" : "";
-    v = Math.abs(v);
-    if (v >= 100000000) {
-      var eok = v / 100000000;
-      return sign + (Number.isInteger(eok) ? eok : eok.toFixed(1)) + "억";
-    }
-    if (v >= 10000) return sign + Math.round(v / 10000).toLocaleString("ko-KR") + "만";
-    return sign + v.toLocaleString("ko-KR");
-  }
-
   function escapeAttr(str) {
     return String(str === undefined || str === null ? "" : str).replace(/"/g, "&quot;");
   }
@@ -1199,6 +1186,44 @@
     };
   }
 
+  // 명세가 여러 건일 때, 세부 내용보다 먼저 "그래서 뭘 어떻게 하라는 건지"를
+  // 한 줄씩 모아서 보여주는 결론 요약. 표는 좁은 화면에서 옆으로 잘리기 쉬워서
+  // 자연스럽게 줄바꿈되는 카드 목록으로 구성한다.
+  function buildConclusionSummary(validResults) {
+    var html = '<div class="report-block conclusion-summary"><h3>결론: 명세별 추천</h3>';
+    html += '<div class="conclusion-list">';
+    validResults.forEach(function (r, idx) {
+      var c = r.c, bestRow = r.bestRow;
+      var name = escapeHtml(c.label || "기존상품 " + (idx + 1));
+      var verdict, diffText, cls;
+      if (bestRow && bestRow.diff !== null) {
+        if (bestRow.diff > 0) {
+          verdict = "재예치(" + escapeHtml(bestRow.label) + ")";
+          diffText = formatSignedWon(bestRow.diff) + " 더 유리";
+          cls = "better";
+        } else {
+          verdict = "유지";
+          diffText = formatSignedWon(-bestRow.diff) + " 더 유리";
+          cls = "hold";
+        }
+      } else {
+        verdict = "-";
+        diffText = "신상품 금리 입력 필요";
+        cls = "neutral";
+      }
+      html += '<div class="conclusion-item">' +
+        '<div class="conclusion-item-top">' +
+          '<span class="conclusion-num">' + (idx + 1) + '</span>' +
+          '<span class="conclusion-title">' + name + '</span>' +
+          '<span class="badge ' + cls + '">' + verdict + '</span>' +
+        '</div>' +
+        '<div class="conclusion-item-diff ' + cls + '">' + diffText + '</div>' +
+      '</div>';
+    });
+    html += '</div></div>';
+    return html;
+  }
+
   // ---------- 결과 요약(리포트) ----------
   // 비교 기준: 각 기존상품의 만기일. 재예치 금액도 "그 상품의 잔여기간" 동안
   // 신금리를 적용해 그 상품 만기일 시점 금액으로 환산해서 비교한다.
@@ -1227,8 +1252,10 @@
     html += '<p class="report-meta">작성일 ' + formatDateUTC(todayLocalDate()) + (todayVal ? ' · 해지(기준)일 ' + formatDateUTC(todayVal) : '') + '</p>';
     html += '</div>';
 
-    // ---- 합계 KPI (기존상품이 2건 이상일 때만) ----
+    // ---- 결론(두괄식): 명세별 추천을 세부 내용보다 먼저 한눈에 ----
     if (multi) {
+      html += buildConclusionSummary(validResults);
+
       var totalCancel = 0;
       var totalHold = 0;
       var holdKnownCount = 0;
@@ -1312,22 +1339,8 @@
     }
     html += '</div>';
 
-    // ---- 비교 그래프 ----
-    if (rows.length && holdAmountForCompare !== null && history && remainYrs > 0) {
-      var diffRows = rows.filter(function (rr) { return rr.diff !== null; });
-      if (diffRows.length) {
-        var productLines = diffRows.map(function (rr) {
-          return { label: rr.label, startVal: penalty.cancelAmount, endVal: rr.maturityAmount };
-        });
-        var svg = buildLineChartSvg(history.balanceToday, holdAmountForCompare, c.method, c.rate, remainYrs, productLines, c.maturity);
-        if (svg) {
-          html += '<div class="report-block"><h4>오늘 → 만기일(' + formatDateUTC(c.maturity) + ') 예상 잔액 추이</h4>';
-          html += '<div class="line-chart-container">' + svg + '</div>';
-          html += '<p class="chart-caption">회색 점선 = 만기까지 유지(오늘 실제 잔액에서 시작) · 파란 실선 = 해지 후 재예치(해지적립금 ' + formatWon(penalty.cancelAmount) + '에서 시작, 선 끝 라벨 = 상품명)</p>';
-          html += '</div>';
-        }
-      }
-    }
+    // ---- 신상품 옵션별 유불리 비교 ----
+    html += buildCompareBars(r);
 
     // ---- 상세 정보 ----
     var asOfDiffers = c.contractStart && Math.abs(c.start.getTime() - c.contractStart.getTime()) > 24 * 3600 * 1000;
@@ -1378,109 +1391,46 @@
       html += '</div>';
     }
 
-    if (rows.length) {
-      html += '<div class="report-block"><h4>신상품 재예치 상세 비교 (이 상품 만기일 기준 환산)</h4>';
-      html += '<div class="table-scroll"><table class="report-table"><thead><tr>' +
-        '<th>신상품</th><th>제안금리</th><th>상품 자체 만기일</th><th>이 상품 만기일 기준 수령액</th><th>유지 대비</th></tr></thead><tbody>';
-      rows.forEach(function (rr) {
-        var isBest = bestRow && rr === bestRow;
-        var diffCell = "-";
-        if (rr.diff !== null) {
-          var badgeClass = rr.diff >= 0 ? "better" : "worse";
-          var badgeText = rr.diff >= 0 ? "유리" : "불리";
-          diffCell = formatSignedWon(rr.diff) + ' <span class="badge ' + badgeClass + '">' + badgeText + "</span>";
-        }
-        var horizonNote = "";
-        if (Math.abs(rr.horizonDiffYears) > 0.05) {
-          horizonNote = '<br><span class="cell-note">(상품기간이 잔여기간보다 ' + formatYears(Math.abs(rr.horizonDiffYears)) + (rr.horizonDiffYears > 0 ? " 김 — 만기 후 동일금리 재투자 가정" : " 짧음 — 이후 별도 재예치 필요") + ')</span>';
-        }
-        html += '<tr' + (isBest ? ' class="best-row"' : '') + '><td>' + escapeHtml(rr.label) + "</td><td>" + formatPct(rr.rate) + "</td><td>" +
-          formatDateUTC(rr.ownMaturityDate) + horizonNote +
-          "</td><td>" + formatWon(rr.maturityAmount) + "</td><td>" + diffCell + "</td></tr>";
-      });
-      html += "</tbody></table></div></div>";
-    }
-
     html += '</div>';
     return html;
   }
 
-  // 오늘(t=0) → 만기일(t=remainYrs)까지, "유지"는 곡선(선택한 이자계산방식),
-  // 각 신상품 재예치 옵션은 단리라 정확히 직선이므로 시작/끝 두 점으로 그린다.
-  function buildLineChartSvg(startMaintain, endMaintain, method, ratePct, remainYrs, productLines, maturityDate) {
-    if (!isFinite(startMaintain) || !isFinite(endMaintain) || remainYrs <= 0) return "";
-    var r = ratePct / 100;
-    var SAMPLES = 16;
-    var maintainPts = [];
-    for (var i = 0; i <= SAMPLES; i++) {
-      var t = (remainYrs * i) / SAMPLES;
-      maintainPts.push({ t: t, v: startMaintain * growthFactor(method, r, t) });
-    }
-    maintainPts[maintainPts.length - 1].v = endMaintain;
+  // 신상품 옵션별로 "만기까지 유지 시" 대비 차액을 가로 막대로 보여준다.
+  // 시간축 그래프 대신 결과(유불리 금액)만 바로 비교할 수 있게 단순화한 형태.
+  function buildCompareBars(r) {
+    var rows = r.rows, bestRow = r.bestRow;
+    var diffRows = rows.filter(function (rr) { return rr.diff !== null; });
+    if (!diffRows.length) return "";
 
-    var allVals = maintainPts.map(function (p) { return p.v; });
-    productLines.forEach(function (pl) { allVals.push(pl.startVal, pl.endVal); });
-    var yMin = Math.min.apply(null, allVals);
-    var yMax = Math.max.apply(null, allVals);
-    var pad = (yMax - yMin) * 0.12 || Math.abs(yMax) * 0.02 || 1;
-    yMin -= pad;
-    yMax += pad;
-
-    var W = 640, H = 280, padL = 60, padR = 16, padT = 14, padB = 26;
-    var plotW = W - padL - padR, plotH = H - padT - padB;
-    function xPix(t) { return padL + (t / remainYrs) * plotW; }
-    function yPix(v) { return padT + plotH - ((v - yMin) / (yMax - yMin)) * plotH; }
-    function pathFor(pts) {
-      return pts.map(function (p, i) { return (i === 0 ? "M" : "L") + xPix(p.t).toFixed(1) + "," + yPix(p.v).toFixed(1); }).join(" ");
-    }
-
-    var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" class="line-chart-svg" preserveAspectRatio="xMidYMid meet" role="img" aria-label="만기까지 유지와 재예치 시나리오 잔액 추이 비교">';
-
-    var GRID = 4;
-    for (var g = 0; g <= GRID; g++) {
-      var gv = yMin + ((yMax - yMin) * g) / GRID;
-      var gy = yPix(gv);
-      svg += '<line x1="' + padL + '" y1="' + gy.toFixed(1) + '" x2="' + (W - padR) + '" y2="' + gy.toFixed(1) + '" class="lc-grid" />';
-      svg += '<text x="' + (padL - 8) + '" y="' + (gy + 3).toFixed(1) + '" class="lc-axis-label" text-anchor="end">' + formatWonShort(gv) + '</text>';
-    }
-    svg += '<text x="' + padL + '" y="' + (H - 6) + '" class="lc-axis-label">오늘</text>';
-    svg += '<text x="' + (W - padR) + '" y="' + (H - 6) + '" class="lc-axis-label" text-anchor="end">' + formatDateUTC(maturityDate) + '</text>';
-
-    svg += '<path d="' + pathFor(maintainPts) + '" class="lc-line lc-line-maintain" />';
-    svg += '<circle cx="' + xPix(0).toFixed(1) + '" cy="' + yPix(startMaintain).toFixed(1) + '" r="3" class="lc-dot lc-dot-maintain" />';
-    svg += '<circle cx="' + xPix(remainYrs).toFixed(1) + '" cy="' + yPix(endMaintain).toFixed(1) + '" r="3" class="lc-dot lc-dot-maintain" />';
-
-    // 끝점 라벨들이 서로 겹치지 않도록, y좌표 기준으로 정렬한 뒤 최소 간격을 확보한다.
-    // (선/점은 실제 값 위치에 그대로 두고, 텍스트 라벨만 세로로 살짝씩 밀어낸다.)
-    var labelEntries = [{ key: "__maintain__", label: "유지", y: yPix(endMaintain) }];
-    productLines.forEach(function (pl, idx) {
-      labelEntries.push({ key: "p" + idx, label: pl.label, y: yPix(pl.endVal) });
-    });
-    labelEntries.sort(function (a, b) { return a.y - b.y; });
-    var MIN_GAP = 11;
-    for (var li = 1; li < labelEntries.length; li++) {
-      if (labelEntries[li].y - labelEntries[li - 1].y < MIN_GAP) {
-        labelEntries[li].y = labelEntries[li - 1].y + MIN_GAP;
+    var maxAbs = Math.max.apply(null, diffRows.map(function (rr) { return Math.abs(rr.diff); })) || 1;
+    var html = '<div class="report-block"><h4>신상품 옵션별 유불리(만기까지 유지 대비)</h4>';
+    html += '<div class="compare-bars">';
+    diffRows.forEach(function (rr) {
+      var isBest = bestRow && rr === bestRow;
+      var better = rr.diff >= 0;
+      var halfPct = Math.min(50, Math.abs(rr.diff) / maxAbs * 50);
+      var horizonNote = "";
+      if (Math.abs(rr.horizonDiffYears) > 0.05) {
+        horizonNote = rr.horizonDiffYears > 0
+          ? " · 상품기간이 " + formatYears(Math.abs(rr.horizonDiffYears)) + " 더 김(만기 후 동일금리 재투자 가정)"
+          : " · 상품기간이 " + formatYears(Math.abs(rr.horizonDiffYears)) + " 더 짧음(이후 별도 재예치 필요)";
       }
-    }
-    var overflow = labelEntries[labelEntries.length - 1].y - (H - 6);
-    if (overflow > 0) {
-      labelEntries.forEach(function (le) { le.y -= overflow; });
-    }
-    var labelYByKey = {};
-    labelEntries.forEach(function (le) { labelYByKey[le.key] = le.y; });
-
-    svg += '<text x="' + (xPix(remainYrs) - 6).toFixed(1) + '" y="' + (labelYByKey.__maintain__ + 3.5).toFixed(1) + '" class="lc-end-label lc-end-label-maintain" text-anchor="end">유지</text>';
-
-    productLines.forEach(function (pl, idx) {
-      var pts = [{ t: 0, v: pl.startVal }, { t: remainYrs, v: pl.endVal }];
-      svg += '<path d="' + pathFor(pts) + '" class="lc-line lc-line-product" />';
-      svg += '<circle cx="' + xPix(remainYrs).toFixed(1) + '" cy="' + yPix(pl.endVal).toFixed(1) + '" r="3" class="lc-dot lc-dot-product" />';
-      svg += '<text x="' + (xPix(remainYrs) - 6).toFixed(1) + '" y="' + (labelYByKey["p" + idx] + 3.5).toFixed(1) + '" class="lc-end-label lc-end-label-product" text-anchor="end">' + escapeHtml(pl.label) + '</text>';
+      html += '<div class="compare-row' + (isBest ? " compare-best" : "") + '">' +
+        '<div class="compare-label">' +
+          '<span class="compare-name">' + escapeHtml(rr.label) + (isBest ? ' <span class="badge accent">최선</span>' : '') + '</span>' +
+          '<span class="compare-sub">제안금리 ' + formatPct(rr.rate) + ' · 만기 시 ' + formatWon(rr.maturityAmount) + horizonNote + '</span>' +
+        '</div>' +
+        '<div class="compare-track">' +
+          '<div class="compare-zero"></div>' +
+          '<div class="compare-bar ' + (better ? "better" : "worse") + '" style="' + (better ? "left:50%;width:" + halfPct : "right:50%;width:" + halfPct) + '%"></div>' +
+        '</div>' +
+        '<div class="compare-diff ' + (better ? "better" : "worse") + '">' + formatSignedWon(rr.diff) + '</div>' +
+      '</div>';
     });
-
-    svg += '</svg>';
-    return svg;
+    html += '</div>';
+    html += '<p class="chart-caption">"만기까지 유지 시" 대비 차액(이 상품 만기일 기준 환산). 오른쪽(초록) = 재예치 유리 · 왼쪽(빨강) = 유지 유리.</p>';
+    html += '</div>';
+    return html;
   }
 
   function kv(label, value) {
