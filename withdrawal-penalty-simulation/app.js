@@ -990,12 +990,29 @@
       '</div>';
   }
 
+  // 첨부 자료 표에서 불필요한 개인정보 열은 빼고, 자주 길어지는 열은 넓게 표시한다.
+  // 열 위치는 파일마다 다를 수 있어 고정 인덱스 대신 헤더 텍스트로 찾는다.
+  var ATTACHMENT_DROP_COLUMN_KEYWORDS = ["가입자번호", "가입자명", "주민번호"];
+  var ATTACHMENT_WIDE_COLUMN_KEYWORDS = ["상품명", "명세일자", "적립금기준일자"];
+
   function renderSheetTableHtml(sheet) {
+    var dropCols = {};
+    var wideCols = {};
+    sheet.rows.forEach(function (row) {
+      row.forEach(function (cell, ci) {
+        var norm = normalizeLabelText(cell);
+        if (!norm) return;
+        if (ATTACHMENT_DROP_COLUMN_KEYWORDS.indexOf(norm) !== -1) dropCols[ci] = true;
+        if (ATTACHMENT_WIDE_COLUMN_KEYWORDS.indexOf(norm) !== -1) wideCols[ci] = true;
+      });
+    });
+
     var html = '<div class="table-scroll"><table class="report-table attachment-excel-table"><tbody>';
     sheet.rows.forEach(function (row) {
       html += "<tr>";
-      row.forEach(function (cell) {
-        html += "<td>" + escapeHtml(cell === null || cell === undefined ? "" : cell) + "</td>";
+      row.forEach(function (cell, ci) {
+        if (dropCols[ci]) return;
+        html += (wideCols[ci] ? '<td class="col-wide">' : "<td>") + escapeHtml(cell === null || cell === undefined ? "" : cell) + "</td>";
       });
       html += "</tr>";
     });
