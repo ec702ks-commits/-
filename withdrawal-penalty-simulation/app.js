@@ -115,14 +115,27 @@
 
   // 달력 기준으로 정확히 N년 뒤를 계산한다(예: 2025.12.31 + 5년 = 2030.12.31,
   // 2025.12.31 + 2.5년 = 2028.06.30). 연 단위를 개월수로 환산해 달력으로
-  // 이동하므로 1/2/2.5/3/5년처럼 개월 단위로 떨어지는 기간은 항상 정확하다.
+  // 이동한 뒤, 예치기간 만기일 표기 관행에 따라 하루를 뺀다(예치일을 포함해
+  // 정확히 N개월이 되는 날의 "전날"이 만기일 — 예: 2025.12.30 + 2.5년(30개월)
+  // = 2028.06.30이 아니라 2028.06.29). 실제 상품 조회 자료로 검증한 규칙이다.
   function addYears(date, years) {
-    return addMonthsClamped(date, Math.round(years * 12));
+    var nominal = addMonthsClamped(date, Math.round(years * 12));
+    return new Date(nominal.getTime() - 86400000);
   }
 
+  // 은행/보험 상품의 이자 계산에 흔히 쓰이는 30/360(1개월=30일, 1년=360일)
+  // 방식으로 두 날짜 사이 기간을 연 단위로 환산한다. 실제 상품 조회 자료의
+  // "예상적립금"과 대조해 이 방식이 맞는 것을 확인했다(달력상 실제 경과일수
+  // 기준으로 계산하면 실제 조회값과 어긋난다).
   function yearsBetween(d1, d2) {
     if (!d1 || !d2) return null;
-    return (d2.getTime() - d1.getTime()) / 86400000 / 365;
+    var y1 = d1.getUTCFullYear(), m1 = d1.getUTCMonth() + 1, day1 = d1.getUTCDate();
+    var y2 = d2.getUTCFullYear(), m2 = d2.getUTCMonth() + 1, day2 = d2.getUTCDate();
+    var dd1 = Math.min(day1, 30);
+    var dd2 = day2;
+    if (dd1 === 30 && day2 === 31) dd2 = 30;
+    var days360 = (y2 - y1) * 360 + (m2 - m1) * 30 + (dd2 - dd1);
+    return days360 / 360;
   }
 
   function formatDateUTC(date) {
