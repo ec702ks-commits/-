@@ -1234,6 +1234,7 @@
           '<span class="conclusion-title">' + name + '</span>' +
           '<span class="badge ' + cls + '">' + verdict + '</span>' +
         '</div>' +
+        '<div class="conclusion-item-amounts">만기까지 유지 시 ' + formatWon(r.holdAmountForCompare) + ' · 해지적립금(재예치 원금) ' + formatWon(r.penalty.cancelAmount) + '</div>' +
         '<div class="conclusion-item-diff ' + cls + '">' + diffText + '</div>' +
       '</div>';
     });

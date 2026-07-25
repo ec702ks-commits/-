@@ -951,6 +951,12 @@ footer {
   min-width: 0;
 }
 
+.conclusion-item-amounts {
+  margin-top: 4px;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+
 .conclusion-item-diff {
   margin-top: 4px;
   font-size: 0.82rem;
@@ -1146,19 +1152,43 @@ footer {
   }
 
   /* 화면에서는 첨부 표를 넓게 펼쳐서 가로 스크롤로 보지만, 인쇄/PDF는
-     스크롤이 불가능하므로 페이지 폭에 맞춰 줄바꿈되도록 되돌린다. */
+     스크롤이 불가능하므로 페이지 폭에 맞춰 줄바꿈되도록 되돌린다.
+     table-layout은 auto로 둬서(기본값) 숫자가 긴 열(해지환급금 등)이
+     강제로 균등폭에 눌려 잘리지 않고 내용에 맞게 배분되게 한다. */
   .table-scroll {
     overflow-x: visible;
   }
 
   .report-table.attachment-excel-table {
     width: 100% !important;
-    table-layout: fixed;
+  }
+
+  .attachment-excel-table td,
+  .attachment-excel-table th {
+    overflow-wrap: anywhere;
   }
 
   .attachment-excel-table td.col-wide,
   .attachment-excel-table th.col-wide {
     min-width: 0;
     white-space: normal;
+  }
+
+  /* 인쇄 중 페이지 경계에서 한 항목이 중간에 잘리지 않도록 한다. */
+  .compare-bars,
+  .compare-row,
+  .conclusion-item,
+  .kpi-tile,
+  .recommend-banner,
+  .report-table tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* 소제목만 페이지 맨 아래에 남고 내용은 다음 페이지로 넘어가지 않도록 한다. */
+  .report-block h3,
+  .report-block h4 {
+    break-after: avoid;
+    page-break-after: avoid;
   }
 }
