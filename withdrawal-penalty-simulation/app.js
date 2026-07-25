@@ -5,11 +5,11 @@
   var RM_INFO_KEY = "wpsim_rm_info_v1";
 
   var DEFAULT_ROWS = [
-    { label: "1년", years: 1 },
-    { label: "2년", years: 2 },
-    { label: "2.5년", years: 2.5 },
-    { label: "3년", years: 3 },
-    { label: "5년", years: 5 }
+    { label: "1년", years: 1, method: "simple" },
+    { label: "2년", years: 2, method: "simple" },
+    { label: "2.5년", years: 2.5, method: "simple" },
+    { label: "3년", years: 3, method: "simple" },
+    { label: "5년", years: 5, method: "simple" }
   ];
 
   var DEFAULT_RM_INFO = {
@@ -172,7 +172,7 @@
       if (!raw) return DEFAULT_ROWS.map(function (r) { return Object.assign({}, r, { rate: "" }); });
       var parsed = JSON.parse(raw);
       if (!Array.isArray(parsed) || !parsed.length) throw new Error("empty");
-      return parsed;
+      return parsed.map(function (r) { return Object.assign({ method: "simple" }, r); });
     } catch (e) {
       return DEFAULT_ROWS.map(function (r) { return Object.assign({}, r, { rate: "" }); });
     }
@@ -180,7 +180,7 @@
 
   function saveRows() {
     var data = state.rows.map(function (r) {
-      return { label: r.label, years: r.years, rate: r.rate };
+      return { label: r.label, years: r.years, rate: r.rate, method: r.method };
     });
     localStorage.setItem(PRODUCTS_KEY, JSON.stringify(data));
   }
@@ -216,7 +216,12 @@
         '<input type="text" data-field="label" placeholder="예: 1년" value="' + escapeAttr(row.label) + '" />' +
         '<input type="number" data-field="years" step="0.1" min="0" placeholder="기간(년)" value="' + (row.years === "" || row.years === null || row.years === undefined ? "" : row.years) + '" />' +
         '<input type="number" data-field="rate" step="0.01" min="0" placeholder="제안금리(%)" value="' + (row.rate === "" || row.rate === null || row.rate === undefined ? "" : row.rate) + '" />' +
-        '<button type="button" class="btn small danger" data-action="delete">삭제</button>';
+        '<button type="button" class="btn small danger" data-action="delete">삭제</button>' +
+        '<select data-field="method" class="product-row-method">' +
+          '<option value="simple"' + (row.method === "simple" || !row.method ? " selected" : "") + '>연단리</option>' +
+          '<option value="compoundYear"' + (row.method === "compoundYear" ? " selected" : "") + '>연복리</option>' +
+          '<option value="compoundMonth"' + (row.method === "compoundMonth" ? " selected" : "") + '>월복리</option>' +
+        '</select>';
 
       wrap.querySelectorAll("input").forEach(function (input) {
         input.addEventListener("input", function () {
@@ -226,6 +231,11 @@
           saveRows();
           renderReport();
         });
+      });
+      wrap.querySelector('[data-field="method"]').addEventListener("change", function (e) {
+        row.method = e.target.value;
+        saveRows();
+        renderReport();
       });
       wrap.querySelector('[data-action="delete"]').addEventListener("click", function () {
         state.rows = state.rows.filter(function (r) { return r.id !== row.id; });
@@ -239,7 +249,7 @@
   }
 
   function addRow(preset) {
-    state.rows.push(Object.assign({ id: state.nextId++, label: "", years: "", rate: "" }, preset || {}));
+    state.rows.push(Object.assign({ id: state.nextId++, label: "", years: "", rate: "", method: "simple" }, preset || {}));
   }
 
   // ---------- 계산 유틸 ----------
@@ -1180,17 +1190,19 @@
       rows = state.rows.filter(function (r) {
         return r.years !== "" && r.years !== null && !isNaN(r.years) && r.rate !== "" && r.rate !== null && !isNaN(r.rate);
       }).map(function (r) {
-        var maturityAmount = penalty.cancelAmount * (1 + (r.rate / 100) * remainYrs);
+        var method = r.method || "simple";
+        var rr = r.rate / 100;
+        var maturityAmount = penalty.cancelAmount * growthFactor(method, rr, remainYrs);
         var ownMaturityDate = addYears(c.today, r.years);
         var diff = holdAmountForCompare === null ? null : maturityAmount - holdAmountForCompare;
         var horizonDiffYears = r.years - remainYrs;
 
         // 신상품 자체 기간이 기존상품 잔여기간과 다르면(더 길거나 짧으면), 두 시나리오의
         // 만기 시점이 서로 달라 단순 차액 비교만으로는 부족하다. 이 신상품을 실제로 그
-        // 자체 만기까지 운용했을 때의 예상액(ownTermAmount)을 구하고, 더 늦게 끝나는
-        // 쪽을 기준으로 "그 사이 기간 동안 최소 몇 %로 재예치해야 동등해지는지"를
-        // 계산해서, 만기 후 재예치 가이드로 제공한다.
-        var ownTermAmount = penalty.cancelAmount * (1 + (r.rate / 100) * r.years);
+        // 자체 만기까지(그 상품이 고른 이자계산방식으로) 운용했을 때의 예상액(ownTermAmount)을
+        // 구하고, 더 늦게 끝나는 쪽을 기준으로 "그 사이 기간 동안 최소 몇 %로(연단리 환산)
+        // 재예치해야 동등해지는지"를 계산해서, 만기 후 재예치 가이드로 제공한다.
+        var ownTermAmount = penalty.cancelAmount * growthFactor(method, rr, r.years);
         var gapYears = Math.abs(horizonDiffYears);
         var requiredReinvestRate = null;
         if (gapYears > 0.05 && holdAmountForCompare !== null && holdAmountForCompare > 0 && ownTermAmount > 0) {
@@ -1206,7 +1218,7 @@
         }
 
         return {
-          label: r.label || (r.years + "년"), years: r.years, rate: r.rate,
+          label: r.label || (r.years + "년"), years: r.years, rate: r.rate, method: method,
           ownMaturityDate: ownMaturityDate, maturityAmount: maturityAmount, diff: diff, horizonDiffYears: horizonDiffYears,
           ownTermAmount: ownTermAmount, gapYears: gapYears, requiredReinvestRate: requiredReinvestRate
         };
@@ -1354,7 +1366,7 @@
         return '<div class="recommend-banner recommend-switch">' +
           '<p class="recommend-eyebrow">이 명세, 이렇게 하세요</p>' +
           '<p class="recommend-headline">중도해지 후 <strong>' + escapeHtml(bestRow.label) + '</strong> 재예치 추천</p>' +
-          '<p class="recommend-detail">만기까지 유지 대비 <strong>' + formatSignedWon(bestRow.diff) + '</strong> 더 유리 (제안금리 ' + formatPct(bestRow.rate) + ')</p>' +
+          '<p class="recommend-detail">만기까지 유지 대비 <strong>' + formatSignedWon(bestRow.diff) + '</strong> 더 유리 (제안금리 ' + formatPct(bestRow.rate) + ', ' + methodLabel(bestRow.method) + ')</p>' +
           '</div>';
       }
       return '<div class="recommend-banner recommend-hold">' +
@@ -1397,7 +1409,7 @@
       html += kpiTile(
         "재예치 시(기존상품 만기 기준)",
         formatWon(bestRow.maturityAmount),
-        bestRow.label + " · 제안금리 " + formatPct(bestRow.rate) + " 가정 · " + formatDateUTC(c.maturity) + " 시점 환산액",
+        bestRow.label + " · 제안금리 " + formatPct(bestRow.rate) + "(" + methodLabel(bestRow.method) + ") 가정 · " + formatDateUTC(c.maturity) + " 시점 환산액",
         false
       );
     }
@@ -1486,7 +1498,7 @@
       html += '<div class="compare-row' + (isBest ? " compare-best" : "") + '">' +
         '<div class="compare-label">' +
           '<span class="compare-name">' + escapeHtml(rr.label) + (isBest ? ' <span class="badge accent">최선</span>' : '') + '</span>' +
-          '<span class="compare-sub">제안금리 ' + formatPct(rr.rate) + ' · 만기 시 ' + formatWon(rr.maturityAmount) + '</span>' +
+          '<span class="compare-sub">제안금리 ' + formatPct(rr.rate) + '(' + methodLabel(rr.method) + ') · 만기 시 ' + formatWon(rr.maturityAmount) + '</span>' +
         '</div>' +
         '<div class="compare-track">' +
           '<div class="compare-zero"></div>' +

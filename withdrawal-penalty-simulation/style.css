@@ -395,6 +395,12 @@ button:focus-visible {
   font-size: 0.85rem;
 }
 
+.product-row-method {
+  grid-column: 1 / -1;
+  padding: 8px 8px;
+  font-size: 0.88rem;
+}
+
 #existingProducts {
   display: flex;
   flex-direction: column;
