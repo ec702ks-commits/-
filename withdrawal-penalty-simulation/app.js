@@ -334,7 +334,7 @@
   // ---------- 기존상품(명세) : 여러 건 지원 ----------
 
   function createProduct() {
-    return { id: state.nextId++, withdrawals: [], attachments: [], refs: {} };
+    return { id: state.nextId++, withdrawals: [], attachments: [], refs: {}, holdAmountManual: false };
   }
 
   // 상품 카드는 추가될 때 딱 한 번만 DOM에 생성되고, 이후 renderReport()가
@@ -530,9 +530,15 @@
     [refs.principalInput, refs.contributionPrincipalInput, refs.holdAmountInput, refs.directCancelAmountInput, refs.directPenaltyAmountInput].forEach(bindAmountMask);
 
     [refs.labelInput, refs.principalInput, refs.contributionPrincipalInput, refs.startDateInput, refs.maturityDateInput,
-      refs.contractRateInput, refs.holdAmountInput, refs.directCancelAmountInput, refs.directPenaltyAmountInput, refs.appliedRatePctInput
+      refs.contractRateInput, refs.directCancelAmountInput, refs.directPenaltyAmountInput, refs.appliedRatePctInput
     ].forEach(function (input) {
       input.addEventListener("input", renderReport);
+    });
+    // 이 칸을 직접 입력하기 시작하면(시스템 조회값 등) 이후로는 이자계산방식을 바꿔도
+    // 자동으로 덮어쓰지 않는다. 비우면 다시 선택된 이자계산방식 값으로 자동 채워진다.
+    refs.holdAmountInput.addEventListener("input", function () {
+      p.holdAmountManual = refs.holdAmountInput.value.trim() !== "";
+      renderReport();
     });
     refs.methodSelect.addEventListener("change", renderReport);
     [refs.penaltyModeDirect, refs.penaltyModeRatio].forEach(function (radio) {
@@ -563,6 +569,7 @@
       var method = btn.getAttribute("data-method");
       btn.addEventListener("click", function () {
         refs.methodSelect.value = method;
+        p.holdAmountManual = false;
         var c = gatherProductCustomer(p);
         var s = updateHoldSuggestion(p, c);
         if (s && s[method] !== null && !isNaN(s[method])) {
@@ -1076,6 +1083,7 @@
     return results;
   }
 
+
   function updatePenalty(p, c, history) {
     var refs = p.refs;
     updateProductPenaltyModeUI(p);
@@ -1130,6 +1138,12 @@
     }
 
     var holdSuggestions = updateHoldSuggestion(p, c);
+    if (holdSuggestions && !p.holdAmountManual) {
+      var trackedEst = holdSuggestions[c.method];
+      if (trackedEst !== null && trackedEst !== undefined && !isNaN(trackedEst)) {
+        setAmountValue(refs.holdAmountInput, trackedEst);
+      }
+    }
     var holdSuggestion = holdSuggestions ? holdSuggestions[c.method] : null;
     var penalty = updatePenalty(p, c, history);
     var holdAmount = parseAmountStr(refs.holdAmountInput.value);
