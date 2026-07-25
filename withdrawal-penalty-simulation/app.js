@@ -1234,11 +1234,28 @@
           '<span class="conclusion-title">' + name + '</span>' +
           '<span class="badge ' + cls + '">' + verdict + '</span>' +
         '</div>' +
-        '<div class="conclusion-item-amounts">만기까지 유지 시 ' + formatWon(r.holdAmountForCompare) + ' · 해지적립금(재예치 원금) ' + formatWon(r.penalty.cancelAmount) + '</div>' +
         '<div class="conclusion-item-diff ' + cls + '">' + diffText + '</div>' +
       '</div>';
     });
     html += '</div></div>';
+    return html;
+  }
+
+  // 합계 KPI(총 해지적립금/총 만기유지 합계) 바로 옆에, 그 합계를 구성하는
+  // 명세별 금액을 나란히 보여줘서 총액과 바로 비교할 수 있게 한다.
+  function buildAggregateBreakdown(validResults) {
+    var html = '<div class="breakdown-list">';
+    validResults.forEach(function (r, idx) {
+      var name = escapeHtml(r.c.label || "기존상품 " + (idx + 1));
+      html += '<div class="breakdown-row">' +
+        '<span class="breakdown-name">' + (idx + 1) + '. ' + name + '</span>' +
+        '<span class="breakdown-vals">' +
+          '<span>해지적립금 ' + formatWon(r.penalty.cancelAmount) + '</span>' +
+          '<span>만기까지 유지 시 ' + formatWon(r.holdAmountForCompare) + '</span>' +
+        '</span>' +
+      '</div>';
+    });
+    html += '</div>';
     return html;
   }
 
@@ -1285,7 +1302,9 @@
       html += '<div class="kpi-row">';
       html += kpiTile("총 해지적립금 합계(오늘 기준)", formatWon(totalCancel), "모두 오늘 해지할 경우 재예치 가능한 총액", false);
       html += kpiTile("총 만기유지 시 합계", formatWon(totalHold), holdKnownCount === validResults.length ? "각 상품 자기 만기일 기준 합계(만기 시점은 상품마다 다름)" : "일부 상품은 정보 부족으로 제외됨", false);
-      html += '</div></div>';
+      html += '</div>';
+      html += buildAggregateBreakdown(validResults);
+      html += '</div>';
     }
 
     // ---- 상품별 리포트 ----
