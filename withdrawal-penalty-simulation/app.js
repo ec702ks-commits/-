@@ -1184,9 +1184,31 @@
         var ownMaturityDate = addYears(c.today, r.years);
         var diff = holdAmountForCompare === null ? null : maturityAmount - holdAmountForCompare;
         var horizonDiffYears = r.years - remainYrs;
+
+        // 신상품 자체 기간이 기존상품 잔여기간과 다르면(더 길거나 짧으면), 두 시나리오의
+        // 만기 시점이 서로 달라 단순 차액 비교만으로는 부족하다. 이 신상품을 실제로 그
+        // 자체 만기까지 운용했을 때의 예상액(ownTermAmount)을 구하고, 더 늦게 끝나는
+        // 쪽을 기준으로 "그 사이 기간 동안 최소 몇 %로 재예치해야 동등해지는지"를
+        // 계산해서, 만기 후 재예치 가이드로 제공한다.
+        var ownTermAmount = penalty.cancelAmount * (1 + (r.rate / 100) * r.years);
+        var gapYears = Math.abs(horizonDiffYears);
+        var requiredReinvestRate = null;
+        if (gapYears > 0.05 && holdAmountForCompare !== null && holdAmountForCompare > 0 && ownTermAmount > 0) {
+          if (horizonDiffYears > 0) {
+            // 신상품 만기가 기존상품 만기보다 늦음: 기존상품을 만기까지 유지한 뒤,
+            // 그 차이만큼 재예치했을 때 신상품 자체 만기 시점 금액과 같아지는 금리.
+            requiredReinvestRate = ((ownTermAmount / holdAmountForCompare) - 1) / gapYears * 100;
+          } else {
+            // 신상품 만기가 기존상품 만기보다 빠름: 신상품 자체 만기 이후 그 차이만큼
+            // 재예치했을 때 기존상품 유지 금액과 같아지는 금리.
+            requiredReinvestRate = ((holdAmountForCompare / ownTermAmount) - 1) / gapYears * 100;
+          }
+        }
+
         return {
           label: r.label || (r.years + "년"), years: r.years, rate: r.rate,
-          ownMaturityDate: ownMaturityDate, maturityAmount: maturityAmount, diff: diff, horizonDiffYears: horizonDiffYears
+          ownMaturityDate: ownMaturityDate, maturityAmount: maturityAmount, diff: diff, horizonDiffYears: horizonDiffYears,
+          ownTermAmount: ownTermAmount, gapYears: gapYears, requiredReinvestRate: requiredReinvestRate
         };
       });
     }
@@ -1450,26 +1472,28 @@
     var maxAbs = Math.max.apply(null, diffRows.map(function (rr) { return Math.abs(rr.diff); })) || 1;
     var html = '<div class="report-block"><h4>신상품 옵션별 유불리(만기까지 유지 대비)</h4>';
     html += '<div class="compare-bars">';
+    var c = r.c;
     diffRows.forEach(function (rr) {
       var isBest = bestRow && rr === bestRow;
       var better = rr.diff >= 0;
       var halfPct = Math.min(50, Math.abs(rr.diff) / maxAbs * 50);
-      var horizonNote = "";
-      if (Math.abs(rr.horizonDiffYears) > 0.05) {
-        horizonNote = rr.horizonDiffYears > 0
-          ? " · 상품기간이 " + formatYears(Math.abs(rr.horizonDiffYears)) + " 더 김(만기 후 동일금리 재투자 가정)"
-          : " · 상품기간이 " + formatYears(Math.abs(rr.horizonDiffYears)) + " 더 짧음(이후 별도 재예치 필요)";
+      var guideNote = "";
+      if (rr.gapYears > 0.05 && rr.requiredReinvestRate !== null) {
+        guideNote = rr.horizonDiffYears > 0
+          ? '<div class="compare-guide">이 상품 만기는 ' + formatDateUTC(rr.ownMaturityDate) + '로 기존상품 만기(' + formatDateUTC(c.maturity) + ')보다 ' + formatYears(rr.gapYears) + ' 늦습니다 — 기존상품을 만기까지 유지한 뒤 그 이후 ' + formatYears(rr.gapYears) + '간 최소 <strong>' + formatPct(rr.requiredReinvestRate) + '</strong> 이상 재예치해야 이 상품과 동등해집니다.</div>'
+          : '<div class="compare-guide">이 상품 만기는 ' + formatDateUTC(rr.ownMaturityDate) + '로 기존상품 만기(' + formatDateUTC(c.maturity) + ')보다 ' + formatYears(rr.gapYears) + ' 빠릅니다 — 이 상품 만기 이후 ' + formatYears(rr.gapYears) + '간 최소 <strong>' + formatPct(rr.requiredReinvestRate) + '</strong> 이상 재예치해야 기존상품 유지와 동등해집니다.</div>';
       }
       html += '<div class="compare-row' + (isBest ? " compare-best" : "") + '">' +
         '<div class="compare-label">' +
           '<span class="compare-name">' + escapeHtml(rr.label) + (isBest ? ' <span class="badge accent">최선</span>' : '') + '</span>' +
-          '<span class="compare-sub">제안금리 ' + formatPct(rr.rate) + ' · 만기 시 ' + formatWon(rr.maturityAmount) + horizonNote + '</span>' +
+          '<span class="compare-sub">제안금리 ' + formatPct(rr.rate) + ' · 만기 시 ' + formatWon(rr.maturityAmount) + '</span>' +
         '</div>' +
         '<div class="compare-track">' +
           '<div class="compare-zero"></div>' +
           '<div class="compare-bar ' + (better ? "better" : "worse") + '" style="' + (better ? "left:50%;width:" + halfPct : "right:50%;width:" + halfPct) + '%"></div>' +
         '</div>' +
         '<div class="compare-diff ' + (better ? "better" : "worse") + '">' + formatSignedWon(rr.diff) + '</div>' +
+        guideNote +
       '</div>';
     });
     html += '</div>';

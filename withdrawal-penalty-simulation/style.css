@@ -903,6 +903,21 @@ footer {
   text-align: right;
 }
 
+.compare-guide {
+  margin-top: 6px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--tile-bg);
+  border: 1px dashed var(--border);
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  text-align: left;
+}
+
+.compare-guide strong {
+  color: var(--navy-900);
+}
+
 .conclusion-summary {
   background: var(--tile-bg);
   border: 1px solid var(--border);
