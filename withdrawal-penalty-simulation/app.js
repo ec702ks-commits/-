@@ -99,34 +99,21 @@
     return new Date(date.getTime() + days * 86400000);
   }
 
-  // 달력 기준 개월수 더하기. 대상 월에 그 날짜가 없으면(예: 12/31 + 6개월 = 6월엔
-  // 31일이 없음) 다음 달로 넘어가지 않고 그 달의 마지막 날로 맞춘다(6/30).
-  function addMonthsClamped(date, months) {
-    var y = date.getUTCFullYear();
-    var m = date.getUTCMonth();
-    var d = date.getUTCDate();
-    var total = m + months;
-    var newYear = y + Math.floor(total / 12);
-    var newMonth = ((total % 12) + 12) % 12;
-    var daysInTargetMonth = new Date(Date.UTC(newYear, newMonth + 1, 0)).getUTCDate();
-    var newDay = Math.min(d, daysInTargetMonth);
-    return new Date(Date.UTC(newYear, newMonth, newDay));
-  }
-
-  // 달력 기준으로 정확히 N년 뒤를 계산한다(예: 2025.12.31 + 5년 = 2030.12.31,
-  // 2025.12.31 + 2.5년 = 2028.06.30). 연 단위를 개월수로 환산해 달력으로
-  // 이동한 뒤, 예치기간 만기일 표기 관행에 따라 하루를 뺀다(예치일을 포함해
-  // 정확히 N개월이 되는 날의 "전날"이 만기일 — 예: 2025.12.30 + 2.5년(30개월)
-  // = 2028.06.30이 아니라 2028.06.29). 실제 상품 조회 자료로 검증한 규칙이다.
+  // 명세일자 + 기간(년)의 만기일 계산. 달력상 "몇 개월 뒤"가 아니라, 1년을
+  // 365일로 고정해 날짜수를 더하는 방식이다(예: 2.5년 = floor(2.5*365) = 912일,
+  // 3년 = 1095일 — 윤년 여부와 무관하게 항상 같은 일수). 실제 상품 조회
+  // 자료 여러 건(2.5년/3년 상품, 서로 다른 명세일자)의 실제 만기일과 정확히
+  // 대조해 확인한 규칙이며, 달력 기준 개월수 계산과는 결과가 다를 수 있다.
   function addYears(date, years) {
-    var nominal = addMonthsClamped(date, Math.round(years * 12));
-    return new Date(nominal.getTime() - 86400000);
+    var days = Math.floor(years * 365);
+    return new Date(date.getTime() + days * 86400000);
   }
 
   // 은행/보험 상품의 이자 계산에 흔히 쓰이는 30/360(1개월=30일, 1년=360일)
   // 방식으로 두 날짜 사이 기간을 연 단위로 환산한다. 실제 상품 조회 자료의
   // "예상적립금"과 대조해 이 방식이 맞는 것을 확인했다(달력상 실제 경과일수
-  // 기준으로 계산하면 실제 조회값과 어긋난다).
+  // 기준으로 계산하면 실제 조회값과 어긋난다). 기존상품 자체의 성장(오늘까지
+  // 경과, 만기까지 유지) 계산에 쓴다.
   function yearsBetween(d1, d2) {
     if (!d1 || !d2) return null;
     var y1 = d1.getUTCFullYear(), m1 = d1.getUTCMonth() + 1, day1 = d1.getUTCDate();
@@ -136,6 +123,14 @@
     if (dd1 === 30 && day2 === 31) dd2 = 30;
     var days360 = (y2 - y1) * 360 + (m2 - m1) * 30 + (dd2 - dd1);
     return days360 / 360;
+  }
+
+  // 실제 달력 경과일수/365(act/365) 방식. 신상품 재예치 쪽 성장(오늘 재예치해서
+  // 비교 시점까지) 계산에 쓴다 — 같은 실제 조회 자료로 대조해보니 기존상품과
+  // 달리 이쪽은 30/360이 아니라 act/365가 정확히 일치했다.
+  function actYearsBetween(d1, d2) {
+    if (!d1 || !d2) return null;
+    return (d2.getTime() - d1.getTime()) / 86400000 / 365;
   }
 
   function formatDateUTC(date) {
@@ -1193,29 +1188,37 @@
     var holdAmountForCompare = holdAmount === null ? holdSuggestion : holdAmount;
 
     var remainYrs = c.remainingYearsClamped;
+    // 신상품 재예치 쪽 성장은 act/365 기준(실제 조회 자료로 확인됨)이라, 기존상품
+    // 자체 계산(30/360, remainYrs)과는 별도로 같은 오늘→기존상품만기 구간을
+    // act/365로 다시 잰다.
+    var remainYrsAct = actYearsBetween(c.today, c.maturity);
+    if (remainYrsAct !== null) remainYrsAct = Math.max(0, remainYrsAct);
+
     var breakEvenRate = null;
-    if (holdAmountForCompare !== null && penalty.cancelAmount !== null && penalty.cancelAmount > 0 && remainYrs !== null && remainYrs > 0) {
-      breakEvenRate = ((holdAmountForCompare / penalty.cancelAmount) - 1) / remainYrs * 100;
+    if (holdAmountForCompare !== null && penalty.cancelAmount !== null && penalty.cancelAmount > 0 && remainYrsAct !== null && remainYrsAct > 0) {
+      breakEvenRate = ((holdAmountForCompare / penalty.cancelAmount) - 1) / remainYrsAct * 100;
     }
 
     var rows = [];
-    if (penalty.cancelAmount !== null && remainYrs !== null) {
+    if (penalty.cancelAmount !== null && remainYrsAct !== null) {
       rows = state.rows.filter(function (r) {
         return r.years !== "" && r.years !== null && !isNaN(r.years) && r.rate !== "" && r.rate !== null && !isNaN(r.rate);
       }).map(function (r) {
         var method = r.method || "simple";
         var rr = r.rate / 100;
-        var maturityAmount = penalty.cancelAmount * growthFactor(method, rr, remainYrs);
+        var maturityAmount = penalty.cancelAmount * growthFactor(method, rr, remainYrsAct);
         var ownMaturityDate = addYears(c.today, r.years);
         var diff = holdAmountForCompare === null ? null : maturityAmount - holdAmountForCompare;
-        var horizonDiffYears = r.years - remainYrs;
 
         // 신상품 자체 기간이 기존상품 잔여기간과 다르면(더 길거나 짧으면), 두 시나리오의
         // 만기 시점이 서로 달라 단순 차액 비교만으로는 부족하다. 이 신상품을 실제로 그
-        // 자체 만기까지(그 상품이 고른 이자계산방식으로) 운용했을 때의 예상액(ownTermAmount)을
-        // 구하고, 더 늦게 끝나는 쪽을 기준으로 "그 사이 기간 동안 최소 몇 %로(연단리 환산)
-        // 재예치해야 동등해지는지"를 계산해서, 만기 후 재예치 가이드로 제공한다.
-        var ownTermAmount = penalty.cancelAmount * growthFactor(method, rr, r.years);
+        // 자체 만기까지(그 상품이 고른 이자계산방식으로, act/365 기준) 운용했을 때의
+        // 예상액(ownTermAmount)을 구하고, 더 늦게 끝나는 쪽을 기준으로 "그 사이 기간
+        // 동안 최소 몇 %로(연단리 환산) 재예치해야 동등해지는지"를 계산해서, 만기 후
+        // 재예치 가이드로 제공한다.
+        var ownTermYrsAct = actYearsBetween(c.today, ownMaturityDate);
+        var ownTermAmount = penalty.cancelAmount * growthFactor(method, rr, ownTermYrsAct);
+        var horizonDiffYears = actYearsBetween(c.maturity, ownMaturityDate);
         var gapYears = Math.abs(horizonDiffYears);
         var requiredReinvestRate = null;
         if (gapYears > 0.05 && holdAmountForCompare !== null && holdAmountForCompare > 0 && ownTermAmount > 0) {
@@ -1403,7 +1406,7 @@
 
   function buildProductReportSection(r, idx, multi) {
     var c = r.c, history = r.history, penalty = r.penalty, rows = r.rows, bestRow = r.bestRow;
-    var holdAmountForCompare = r.holdAmountForCompare, remainYrs = r.remainYrs, breakEvenRate = r.breakEvenRate;
+    var holdAmountForCompare = r.holdAmountForCompare, breakEvenRate = r.breakEvenRate;
     var html = "";
 
     html += '<div class="product-report' + (multi ? " product-report-divided" : "") + '">';
