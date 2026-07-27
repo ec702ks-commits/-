@@ -386,7 +386,7 @@
       '<div class="product-subsection attachment-subsection">' +
         '<h4>해지패널티 계산 자료 첨부(선택) — 먼저 올리면 아래 항목이 자동으로 채워집니다</h4>' +
         '<p class="hint">당사 시스템에서 나오는 해지패널티 계산 자료를 첨부하면 아래 계산기 항목(적립금·날짜·금리 등)을 자동으로 인식해서 채워줍니다. 이미지(스크린샷, 사진) 또는 엑셀 파일(.xlsx/.xls/.csv)을 지원하며, 여러 개 첨부할 수 있습니다. 파일은 서버로 전송되지 않고 이 화면 안에서만 처리됩니다. 자동으로 채워진 값은 아래에서 언제든 직접 수정할 수 있습니다.</p>' +
-        '<input type="file" accept="image/*,.xlsx,.xls,.csv" data-field="attachmentFile" />' +
+        '<input type="file" accept="image/*,.xlsx,.xls,.csv,.pdf" data-field="attachmentFile" />' +
         '<div class="autofill-summary" data-role="autofillSummary"></div>' +
         '<div class="attachment-list" data-role="attachmentList"></div>' +
       '</div>' +
@@ -649,7 +649,25 @@
         return;
       }
 
-      alert("이미지(스크린샷, 사진) 또는 엑셀 파일(.xlsx/.xls/.csv)만 첨부할 수 있습니다.");
+      if (/\.pdf$/i.test(file.name)) {
+        if (typeof pdfjsLib === "undefined") {
+          alert("PDF를 읽는 기능을 불러오지 못했습니다. 페이지를 새로고침한 뒤 다시 시도해주세요.");
+          return;
+        }
+        extractPdfPenaltyClauses(file, function (err, result) {
+          if (err) {
+            alert("이 PDF를 열 수 없습니다. 비밀번호가 걸려 있거나 지원하지 않는 형식일 수 있습니다.");
+            return;
+          }
+          p.attachments.push({ id: state.nextId++, kind: "pdf", name: file.name, snippets: result.snippets, pageCount: result.pageCount });
+          renderProductAttachments(p);
+          renderPdfSnippetsSummary(p, result.snippets, file.name);
+          renderReport();
+        });
+        return;
+      }
+
+      alert("이미지(스크린샷, 사진), 엑셀 파일(.xlsx/.xls/.csv) 또는 PDF만 첨부할 수 있습니다.");
     });
 
     renderProductWithdrawalRows(p);
@@ -664,11 +682,15 @@
       row.className = "attachment-row";
       var thumbHtml = a.kind === "excel"
         ? '<span class="attachment-thumb attachment-thumb-excel">표</span>'
+        : a.kind === "pdf"
+        ? '<span class="attachment-thumb attachment-thumb-pdf">PDF</span>'
         : '<img class="attachment-thumb" src="' + a.dataUrl + '" alt="' + escapeAttr(a.name) + '" />';
       var appliedCount = (a.appliedFields && a.appliedFields.length) || 0;
       var nameHtml = a.kind === "excel"
         ? escapeHtml(a.name) + '<span class="attachment-meta">' + a.sheets.length + '개 시트 · ' + a.sheets.reduce(function (s, sh) { return s + sh.rows.length; }, 0) + '행 인식됨' +
           (appliedCount ? ' · ' + appliedCount + '개 항목 자동입력됨' : '') + '</span>'
+        : a.kind === "pdf"
+        ? escapeHtml(a.name) + '<span class="attachment-meta">' + a.pageCount + '쪽 중 중도해지 관련 문구 ' + a.snippets.length + '건 찾음' + (a.snippets.length ? ' — 아래에서 확인하세요' : ' (직접 확인해주세요)') + '</span>'
         : escapeHtml(a.name);
       row.innerHTML = thumbHtml +
         '<span class="attachment-name">' + nameHtml + '</span>' +
@@ -1006,6 +1028,123 @@
         '<p><strong>"' + escapeHtml(fileName) + '"에서 ' + applied.length + '개 항목을 자동으로 채웠습니다.</strong> 아래에서 값을 확인하고, 필요하면 직접 수정하세요.</p>' +
         '<ul>' + itemsHtml + '</ul>' +
       '</div>';
+  }
+
+  // PDF는 값을 계산기에 자동으로 채우지 않고, 찾은 문구만 그대로 보여준다(직접 확인 후 입력).
+  function renderPdfSnippetsSummary(p, snippets, fileName) {
+    var box = p.refs.autofillSummaryEl;
+    if (!box) return;
+    if (!snippets || !snippets.length) {
+      box.innerHTML = '<div class="autofill-note autofill-none">"' + escapeHtml(fileName) + '"에서 중도해지 관련 문구를 찾지 못했습니다. 직접 확인 후 아래 항목에 입력해주세요.</div>';
+      return;
+    }
+    var snippetsHtml = snippets.map(function (s) {
+      return '<pre class="pdf-snippet">' + escapeHtml(s) + '</pre>';
+    }).join("");
+    box.innerHTML =
+      '<div class="autofill-note pdf-found">' +
+        '<p><strong>"' + escapeHtml(fileName) + '"에서 중도해지 관련 문구 ' + snippets.length + '건을 찾았습니다.</strong> 자동으로 계산에 반영하지 않으니, 아래 내용을 직접 확인하고 해당 항목에 입력해주세요.</p>' +
+        snippetsHtml +
+      '</div>';
+  }
+
+  // ---------- 첨부 PDF(상품설명서)에서 중도해지 관련 문구 찾기 ----------
+  // PDF는 회사마다 표/줄글 형식이 제각각이라 값을 자동으로 계산에 채워 넣는 건
+  // 신뢰할 수 없다. 대신 "중도해지/해지환급금/해지공제" 등 키워드가 있는 문단을
+  // 찾아 그대로 보여주기만 하고, 정확한 숫자는 RM이 읽고 직접 입력하게 한다.
+  var PDF_PENALTY_KEYWORDS = ["중도해지", "중도 해지", "해지환급금", "해지공제", "해지패널티", "중도인출", "경과기간별"];
+
+  function ensurePdfWorkerReady() {
+    if (typeof pdfjsLib === "undefined") return false;
+    if (pdfjsLib.GlobalWorkerOptions.workerSrc) return true;
+    var embedded = document.getElementById("pdfWorkerSrc");
+    if (embedded && embedded.textContent && embedded.textContent.length > 1000) {
+      var blob = new Blob([embedded.textContent], { type: "application/javascript" });
+      pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(blob);
+    } else {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = "vendor/pdf.worker.min.js";
+    }
+    return true;
+  }
+
+  // pdf.js가 페이지마다 내려주는 글자 조각들을 y좌표가 비슷한 것끼리 묶어
+  // 읽기 좋은 "줄" 단위 배열로 재구성한다.
+  function pdfPageTextLines(content) {
+    var lines = [];
+    var current = null;
+    var lastY = null;
+    content.items.forEach(function (item) {
+      var y = Math.round(item.transform[5]);
+      if (lastY === null || Math.abs(y - lastY) > 2) {
+        if (current !== null) lines.push(current.trim());
+        current = item.str;
+      } else {
+        current += item.str;
+      }
+      lastY = y;
+    });
+    if (current !== null) lines.push(current.trim());
+    return lines.filter(function (l) { return l !== ""; });
+  }
+
+  // 키워드가 있는 줄을 찾아 그 앞뒤 줄을 붙여서(표는 보통 여러 줄에 걸쳐 있으므로)
+  // 스니펫으로 만든다. 가까이 있는 매칭들은 하나로 합친다.
+  function findPenaltyClauseSnippets(lines) {
+    var matchedIdx = [];
+    lines.forEach(function (line, idx) {
+      if (PDF_PENALTY_KEYWORDS.some(function (kw) { return line.indexOf(kw) !== -1; })) {
+        matchedIdx.push(idx);
+      }
+    });
+    if (!matchedIdx.length) return [];
+
+    var windows = matchedIdx.map(function (idx) {
+      return { start: Math.max(0, idx - 2), end: Math.min(lines.length - 1, idx + 8) };
+    });
+    var merged = [];
+    windows.forEach(function (w) {
+      var last = merged[merged.length - 1];
+      if (last && w.start <= last.end + 1) {
+        last.end = Math.max(last.end, w.end);
+      } else {
+        merged.push({ start: w.start, end: w.end });
+      }
+    });
+
+    return merged.slice(0, 3).map(function (w) {
+      return lines.slice(w.start, w.end + 1).join("\n");
+    });
+  }
+
+  function extractPdfPenaltyClauses(file, callback) {
+    if (!ensurePdfWorkerReady()) {
+      callback(new Error("pdfjs not available"), null);
+      return;
+    }
+    var reader = new FileReader();
+    reader.onload = function () {
+      var bytes = new Uint8Array(reader.result);
+      pdfjsLib.getDocument({ data: bytes }).promise.then(function (doc) {
+        var pagePromises = [];
+        for (var i = 1; i <= doc.numPages; i++) {
+          pagePromises.push(
+            doc.getPage(i).then(function (page) {
+              return page.getTextContent().then(pdfPageTextLines);
+            })
+          );
+        }
+        return Promise.all(pagePromises).then(function (perPageLines) {
+          var allLines = [];
+          perPageLines.forEach(function (pl) { allLines = allLines.concat(pl); });
+          var snippets = findPenaltyClauseSnippets(allLines);
+          callback(null, { snippets: snippets, pageCount: doc.numPages });
+        });
+      }).catch(function (e) {
+        callback(e, null);
+      });
+    };
+    reader.onerror = function () { callback(new Error("read failed"), null); };
+    reader.readAsArrayBuffer(file);
   }
 
   // 첨부 자료 표에서 불필요한 개인정보 열은 빼고, 자주 길어지는 열은 넓게 표시한다.
@@ -1478,6 +1617,11 @@
               html += '<p class="cell-note">' + escapeHtml(a.name) + '</p>';
             }
             html += renderSheetTableHtml(sheet);
+          });
+        } else if (a.kind === "pdf") {
+          html += '<p class="cell-note">' + escapeHtml(a.name) + ' — 중도해지 관련 문구(참고용, RM 확인 필요)</p>';
+          a.snippets.forEach(function (s) {
+            html += '<pre class="pdf-snippet">' + escapeHtml(s) + '</pre>';
           });
         } else {
           html += '<img class="attachment-print-image" src="' + a.dataUrl + '" alt="해지패널티 계산 자료" />';

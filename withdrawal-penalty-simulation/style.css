@@ -496,6 +496,16 @@ input[type="file"] {
   background: var(--badge-better-bg);
 }
 
+.attachment-thumb-pdf {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--primary);
+  background: var(--badge-hold-bg);
+}
+
 .attachment-name {
   display: flex;
   flex-direction: column;
@@ -592,6 +602,25 @@ input[type="file"] {
   border: 1px solid var(--border);
   background: var(--table-header-bg);
   color: var(--text-muted);
+}
+
+.pdf-found {
+  border: 1px solid var(--primary);
+  background: var(--badge-hold-bg);
+  color: var(--text);
+}
+
+.pdf-snippet {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .withdrawal-history {

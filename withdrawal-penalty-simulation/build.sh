@@ -22,6 +22,12 @@ OUT="dist/중도해지_패널티_시뮬레이션.html"
   cat vendor/xlsx.full.min.js
   echo '</script>'
   echo '<script>'
+  cat vendor/pdf.min.js
+  echo '</script>'
+  echo '<script type="text/plain" id="pdfWorkerSrc">'
+  cat vendor/pdf.worker.min.js
+  echo '</script>'
+  echo '<script>'
   cat app.js
   echo '</script>'
   echo '</body>'
