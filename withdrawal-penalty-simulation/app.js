@@ -659,9 +659,26 @@
             alert("이 PDF를 열 수 없습니다. 비밀번호가 걸려 있거나 지원하지 않는 형식일 수 있습니다.");
             return;
           }
-          p.attachments.push({ id: state.nextId++, kind: "pdf", name: file.name, snippets: result.snippets, pageCount: result.pageCount });
+          var matchedTier = null;
+          var elapsedMonths = null;
+          if (result.breakpoints && result.breakpoints.length) {
+            var c = gatherProductCustomer(p);
+            if (c.elapsedYears !== null) {
+              elapsedMonths = Math.max(0, c.elapsedYears) * 12;
+              matchedTier = matchPenaltyTier(result.breakpoints, elapsedMonths);
+            }
+          }
+          if (matchedTier) {
+            refs.penaltyModeRatio.checked = true;
+            updateProductPenaltyModeUI(p);
+            refs.appliedRatePctInput.value = matchedTier.pct;
+          }
+          p.attachments.push({
+            id: state.nextId++, kind: "pdf", name: file.name, snippets: result.snippets,
+            pageCount: result.pageCount, breakpoints: result.breakpoints, matchedTier: matchedTier
+          });
           renderProductAttachments(p);
-          renderPdfSnippetsSummary(p, result.snippets, file.name);
+          renderPdfSnippetsSummary(p, result, file.name, matchedTier, elapsedMonths);
           renderReport();
         });
         return;
@@ -690,7 +707,8 @@
         ? escapeHtml(a.name) + '<span class="attachment-meta">' + a.sheets.length + '개 시트 · ' + a.sheets.reduce(function (s, sh) { return s + sh.rows.length; }, 0) + '행 인식됨' +
           (appliedCount ? ' · ' + appliedCount + '개 항목 자동입력됨' : '') + '</span>'
         : a.kind === "pdf"
-        ? escapeHtml(a.name) + '<span class="attachment-meta">' + a.pageCount + '쪽 중 중도해지 관련 문구 ' + a.snippets.length + '건 찾음' + (a.snippets.length ? ' — 아래에서 확인하세요' : ' (직접 확인해주세요)') + '</span>'
+        ? escapeHtml(a.name) + '<span class="attachment-meta">' + a.pageCount + '쪽 중 중도해지 관련 문구 ' + a.snippets.length + '건 찾음' +
+          (a.matchedTier ? ' · 적용이율 비율 ' + a.matchedTier.pct + '% 자동설정됨' : '') + '</span>'
         : escapeHtml(a.name);
       row.innerHTML = thumbHtml +
         '<span class="attachment-name">' + nameHtml + '</span>' +
@@ -1031,19 +1049,43 @@
   }
 
   // PDF는 값을 계산기에 자동으로 채우지 않고, 찾은 문구만 그대로 보여준다(직접 확인 후 입력).
-  function renderPdfSnippetsSummary(p, snippets, fileName) {
+  function renderPdfSnippetsSummary(p, result, fileName, matchedTier, elapsedMonths) {
     var box = p.refs.autofillSummaryEl;
     if (!box) return;
+    var snippets = result.snippets;
+    var breakpoints = result.breakpoints;
+
+    var tierHtml = "";
+    if (matchedTier) {
+      tierHtml =
+        '<div class="autofill-note autofill-ok">' +
+          '<p><strong>경과기간별 적용비율표를 찾아서 자동으로 설정했습니다.</strong></p>' +
+          '<p>현재 경과기간 약 ' + formatYears(elapsedMonths / 12) + '(' + Math.round(elapsedMonths) + '개월) → "' + escapeHtml(matchedTier.raw) + '" 구간 적용 → 적용이율 비율 <strong>' + matchedTier.pct + '%</strong>로 설정</p>' +
+          (breakpoints.length > 1 ? '<pre class="pdf-snippet">' + escapeHtml(breakpoints.map(function (b) { return b.raw; }).join("\n")) + '</pre>' : "") +
+          '<p class="cell-note">자동으로 채운 값이니 아래 "적용이율 비율" 칸에서 다시 한 번 확인해주세요.</p>' +
+        '</div>';
+    } else if (breakpoints && breakpoints.length) {
+      tierHtml =
+        '<div class="autofill-note pdf-found">' +
+          '<p><strong>경과기간별 적용비율표를 찾았지만, 현재 경과기간에 자동으로 매칭하지 못했습니다.</strong> 아래 표를 보고 직접 "적용이율 비율" 칸에 입력해주세요.</p>' +
+          '<pre class="pdf-snippet">' + escapeHtml(breakpoints.map(function (b) { return b.raw; }).join("\n")) + '</pre>' +
+        '</div>';
+    }
+
     if (!snippets || !snippets.length) {
-      box.innerHTML = '<div class="autofill-note autofill-none">"' + escapeHtml(fileName) + '"에서 중도해지 관련 문구를 찾지 못했습니다. 직접 확인 후 아래 항목에 입력해주세요.</div>';
+      if (!tierHtml) {
+        box.innerHTML = '<div class="autofill-note autofill-none">"' + escapeHtml(fileName) + '"에서 중도해지 관련 문구를 찾지 못했습니다. 직접 확인 후 아래 항목에 입력해주세요.</div>';
+      } else {
+        box.innerHTML = tierHtml;
+      }
       return;
     }
     var snippetsHtml = snippets.map(function (s) {
       return '<pre class="pdf-snippet">' + escapeHtml(s) + '</pre>';
     }).join("");
-    box.innerHTML =
+    box.innerHTML = tierHtml +
       '<div class="autofill-note pdf-found">' +
-        '<p><strong>"' + escapeHtml(fileName) + '"에서 중도해지 관련 문구 ' + snippets.length + '건을 찾았습니다.</strong> 자동으로 계산에 반영하지 않으니, 아래 내용을 직접 확인하고 해당 항목에 입력해주세요.</p>' +
+        '<p><strong>"' + escapeHtml(fileName) + '"에서 중도해지 관련 문구 ' + snippets.length + '건을 찾았습니다.</strong> 원문은 아래에서 확인하세요.</p>' +
         snippetsHtml +
       '</div>';
   }
@@ -1116,6 +1158,52 @@
     });
   }
 
+  // "6개월 미만 약정이율의 30%" 같은 경과기간별 적용비율 표를 줄 단위로 찾아
+  // {minMonths, maxMonths, pct} 구간 목록으로 만든다. 한 줄에 기간 표현과 %가
+  // 함께 있는, 표에서 흔한 형태만 인식한다(문장이 여러 줄에 걸치는 경우는
+  // 못 찾을 수 있음 — 그 경우엔 스니펫만 보여주고 자동 설정은 하지 않는다).
+  function parsePenaltyRateTable(lines) {
+    var TU = "(\\d+(?:\\.\\d+)?)\\s*(개월|년)";
+    var breakpoints = [];
+    lines.forEach(function (line) {
+      var pctMatch = /(\d+(?:\.\d+)?)\s*%/.exec(line);
+      if (!pctMatch) return;
+      var pct = parseFloat(pctMatch[1]);
+
+      var rangeRe = new RegExp(TU + "\\s*이상\\s*" + TU + "\\s*미만");
+      var m = rangeRe.exec(line);
+      if (m) {
+        breakpoints.push({ minMonths: toMonthsFromUnit(parseFloat(m[1]), m[2]), maxMonths: toMonthsFromUnit(parseFloat(m[3]), m[4]), pct: pct, raw: line });
+        return;
+      }
+      var underRe = new RegExp(TU + "\\s*미만");
+      m = underRe.exec(line);
+      if (m && line.indexOf("이상") === -1) {
+        breakpoints.push({ minMonths: 0, maxMonths: toMonthsFromUnit(parseFloat(m[1]), m[2]), pct: pct, raw: line });
+        return;
+      }
+      var overRe = new RegExp(TU + "\\s*(이상|초과)");
+      m = overRe.exec(line);
+      if (m && line.indexOf("미만") === -1) {
+        breakpoints.push({ minMonths: toMonthsFromUnit(parseFloat(m[1]), m[2]), maxMonths: null, pct: pct, raw: line });
+      }
+    });
+    return breakpoints;
+  }
+
+  function toMonthsFromUnit(n, unit) {
+    return unit === "년" ? n * 12 : n;
+  }
+
+  // 구간이 정확히 하나만 걸리는 경우에만 자동 적용한다(겹치거나 빈 구간이 있어
+  // 애매하면 자동 적용하지 않고 RM이 직접 확인하게 한다).
+  function matchPenaltyTier(breakpoints, elapsedMonths) {
+    var matches = breakpoints.filter(function (b) {
+      return elapsedMonths >= b.minMonths && (b.maxMonths === null || elapsedMonths < b.maxMonths);
+    });
+    return matches.length === 1 ? matches[0] : null;
+  }
+
   function extractPdfPenaltyClauses(file, callback) {
     if (!ensurePdfWorkerReady()) {
       callback(new Error("pdfjs not available"), null);
@@ -1137,7 +1225,8 @@
           var allLines = [];
           perPageLines.forEach(function (pl) { allLines = allLines.concat(pl); });
           var snippets = findPenaltyClauseSnippets(allLines);
-          callback(null, { snippets: snippets, pageCount: doc.numPages });
+          var breakpoints = parsePenaltyRateTable(allLines);
+          callback(null, { snippets: snippets, pageCount: doc.numPages, breakpoints: breakpoints });
         });
       }).catch(function (e) {
         callback(e, null);
@@ -1620,6 +1709,9 @@
           });
         } else if (a.kind === "pdf") {
           html += '<p class="cell-note">' + escapeHtml(a.name) + ' — 중도해지 관련 문구(참고용, RM 확인 필요)</p>';
+          if (a.matchedTier) {
+            html += '<p class="cell-note">경과기간별 적용비율표에서 "' + escapeHtml(a.matchedTier.raw) + '" 구간이 적용되어 적용이율 비율 <strong>' + a.matchedTier.pct + '%</strong>로 자동 설정됨</p>';
+          }
           a.snippets.forEach(function (s) {
             html += '<pre class="pdf-snippet">' + escapeHtml(s) + '</pre>';
           });
