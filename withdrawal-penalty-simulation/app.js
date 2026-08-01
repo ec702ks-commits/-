@@ -450,6 +450,7 @@
           '<label>해지적립금(패널티 차감 후, 재예치 가능 금액, 원)<input type="text" data-field="directCancelAmount" /></label>' +
           '<label>해지패널티 금액(원) — 선택, 참고용<input type="text" data-field="directPenaltyAmount" /></label>' +
         '</div>' +
+        '<p class="hint" data-role="directModeFutureNote"></p>' +
         '<div class="mapping-grid hidden" data-role="ratioModeFields">' +
           '<label>중도해지 시 적용이율 비율(%, 약정금리 대비)<input type="number" data-field="appliedRatePct" min="0" max="100" step="1" placeholder="예: 80" /></label>' +
           '<p class="hint" data-role="ratioModeCalc"></p>' +
@@ -525,6 +526,7 @@
     refs.directPenaltyAmountInput = wrap.querySelector('[data-field="directPenaltyAmount"]');
     refs.appliedRatePctInput = wrap.querySelector('[data-field="appliedRatePct"]');
     refs.ratioModeCalcEl = wrap.querySelector('[data-role="ratioModeCalc"]');
+    refs.directModeFutureNoteEl = wrap.querySelector('[data-role="directModeFutureNote"]');
     refs.cancelAmountResultEl = wrap.querySelector('[data-role="cancelAmountResult"]');
     refs.attachmentFileInput = wrap.querySelector('[data-field="attachmentFile"]');
     refs.attachmentListEl = wrap.querySelector('[data-role="attachmentList"]');
@@ -1359,8 +1361,29 @@
     var penaltyAmount = null;
 
     if (mode === "direct") {
-      cancelAmount = parseAmountStr(refs.directCancelAmountInput.value);
+      var rawCancelAmount = parseAmountStr(refs.directCancelAmountInput.value);
+      cancelAmount = rawCancelAmount;
       penaltyAmount = parseAmountStr(refs.directPenaltyAmountInput.value);
+
+      // 입력한 해지적립금은 보통 회사 시스템에서 "실제 오늘" 기준으로 조회한 값이다.
+      // 위 "오늘(해지기준일)"을 미래로 바꾼 경우, 그 값을 약정금리로 계속 굴렸다고
+      // 가정한 추정치로 미래 시점 해지적립금을 보여준다(실제 회사 값과 다를 수 있음).
+      var todayReal = todayLocalDate();
+      if (rawCancelAmount !== null && c.today && c.rate !== null &&
+          Math.abs(c.today.getTime() - todayReal.getTime()) > 12 * 3600 * 1000) {
+        var gapYrs = yearsBetween(todayReal, c.today);
+        if (gapYrs !== null) {
+          var estimated = rawCancelAmount * growthFactor(c.method, c.rate / 100, gapYrs);
+          cancelAmount = estimated;
+          refs.directModeFutureNoteEl.textContent =
+            (gapYrs >= 0
+              ? "오늘 날짜가 실제 오늘(" + formatDateUTC(todayReal) + ")보다 " + formatYears(gapYrs) + " 미래라, 입력하신 해지적립금 " + formatWon(rawCancelAmount) + "이 약정금리로 계속 늘었다고 가정한 추정치 " + formatWon(estimated) + "을 사용합니다."
+              : "오늘 날짜가 실제 오늘(" + formatDateUTC(todayReal) + ")보다 " + formatYears(-gapYrs) + " 과거라, 입력하신 해지적립금을 그만큼 거꾸로 할인한 추정치 " + formatWon(estimated) + "을 사용합니다.") +
+            " 실제 회사 시스템 조회값과 다를 수 있으니 참고용으로만 사용하세요.";
+        }
+      } else {
+        refs.directModeFutureNoteEl.textContent = "";
+      }
     } else {
       var ratePct = parseFloat(refs.appliedRatePctInput.value);
       ratePct = isNaN(ratePct) ? null : ratePct;
