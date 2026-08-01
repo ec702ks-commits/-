@@ -1259,4 +1259,10 @@ footer {
     break-after: avoid;
     page-break-after: avoid;
   }
+
+  /* 명세(기존상품)가 여러 건이면 각 명세를 새 페이지에서 시작한다(첫 번째는 제외). */
+  .product-report + .product-report {
+    break-before: page;
+    page-break-before: always;
+  }
 }

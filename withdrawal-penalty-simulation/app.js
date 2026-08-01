@@ -881,7 +881,9 @@
     { field: "contributionPrincipal", type: "amount", displayLabel: "납입원금", headers: ["납입원금", "납입원본", "가입원금"] },
     { field: "contractRate", type: "rate", displayLabel: "약정금리(명세 적용이율)", headers: ["명세적용이율", "적용이율", "약정금리", "계약금리", "적용금리"] },
     { field: "directCancelAmount", type: "amount", displayLabel: "해지적립금(해지환급금)", headers: ["해지환급금", "해지적립금", "해지후적립금", "재예치가능금액"] },
-    { field: "directPenaltyAmount", type: "amount", displayLabel: "해지패널티 금액", headers: ["중도해지페널티", "중도해지패널티", "해지패널티", "해지패널티금액", "패널티"] }
+    { field: "directPenaltyAmount", type: "amount", displayLabel: "해지패널티 금액", headers: ["중도해지페널티", "중도해지패널티", "해지패널티", "해지패널티금액", "패널티"] },
+    { field: "withdrawalDate", type: "date", displayLabel: "중간인출 일자", headers: ["인출일자", "출금일자", "인출일", "중도인출일자", "중도인출일"] },
+    { field: "withdrawalAmount", type: "amount", displayLabel: "중간인출 금액", headers: ["인출금액", "출금액", "인출액", "중도인출금액", "중도인출액"] }
   ];
 
   function findTableHeaderColumnMap(row) {
@@ -981,11 +983,26 @@
     var asOfDateValue = extracted.asOfDate ? extracted.asOfDate.value : null;
     delete extracted.asOfDate;
 
+    var withdrawalDateValue = extracted.withdrawalDate ? extracted.withdrawalDate.value : null;
+    var withdrawalAmountValue = extracted.withdrawalAmount ? extracted.withdrawalAmount.value : null;
+    delete extracted.withdrawalDate;
+    delete extracted.withdrawalAmount;
+
     var applied = applyExtractedFields(targetProduct, extracted);
 
     targetProduct.principalAsOfDate = asOfDateValue;
     if (asOfDateValue) {
       applied.push({ field: "asOfDate", label: "적립금기준일자(경과이자 계산 기준, 화면에는 표시 안 됨)", display: asOfDateValue });
+    }
+
+    if (withdrawalDateValue && withdrawalAmountValue) {
+      targetProduct.withdrawals.push({
+        id: state.nextId++,
+        date: withdrawalDateValue,
+        amount: Math.round(withdrawalAmountValue).toLocaleString("ko-KR")
+      });
+      renderProductWithdrawalRows(targetProduct);
+      applied.push({ field: "withdrawal", label: "중간인출 이력", display: withdrawalDateValue + " / " + formatWon(withdrawalAmountValue) });
     }
 
     if (targetProduct.refs.methodSelect.value !== "compoundYear") {
@@ -1767,8 +1784,8 @@
       var guideNote = "";
       if (rr.gapYears > 0.05 && rr.requiredReinvestRate !== null) {
         guideNote = rr.horizonDiffYears > 0
-          ? '<div class="compare-guide">이 상품 만기는 ' + formatDateUTC(rr.ownMaturityDate) + '로 기존상품 만기(' + formatDateUTC(c.maturity) + ')보다 ' + formatYears(rr.gapYears) + ' 늦습니다 — 기존상품을 만기까지 유지한 뒤 그 이후 ' + formatYears(rr.gapYears) + '간 최소 <strong>' + formatPct(rr.requiredReinvestRate) + '</strong> 이상 재예치해야 이 상품과 동등해집니다.</div>'
-          : '<div class="compare-guide">이 상품 만기는 ' + formatDateUTC(rr.ownMaturityDate) + '로 기존상품 만기(' + formatDateUTC(c.maturity) + ')보다 ' + formatYears(rr.gapYears) + ' 빠릅니다 — 이 상품 만기 이후 ' + formatYears(rr.gapYears) + '간 최소 <strong>' + formatPct(rr.requiredReinvestRate) + '</strong> 이상 재예치해야 기존상품 유지와 동등해집니다.</div>';
+          ? '<div class="compare-guide">이 상품 만기는 ' + formatDateUTC(rr.ownMaturityDate) + '로 기존상품 만기(' + formatDateUTC(c.maturity) + ')보다 ' + formatYears(rr.gapYears) + ' 늦습니다 — 기존상품을 만기까지 유지한 뒤 그 이후 ' + formatYears(rr.gapYears) + '간 최소 <strong>' + formatPct(rr.requiredReinvestRate) + '(연단리 기준)</strong> 이상 재예치해야 이 상품과 동등해집니다.</div>'
+          : '<div class="compare-guide">이 상품 만기는 ' + formatDateUTC(rr.ownMaturityDate) + '로 기존상품 만기(' + formatDateUTC(c.maturity) + ')보다 ' + formatYears(rr.gapYears) + ' 빠릅니다 — 이 상품 만기 이후 ' + formatYears(rr.gapYears) + '간 최소 <strong>' + formatPct(rr.requiredReinvestRate) + '(연단리 기준)</strong> 이상 재예치해야 기존상품 유지와 동등해집니다.</div>';
       }
       html += '<div class="compare-row' + (isBest ? " compare-best" : "") + '">' +
         '<div class="compare-label">' +
