@@ -386,7 +386,7 @@
       '<div class="product-subsection attachment-subsection">' +
         '<h4>해지패널티 계산 자료 첨부(선택) — 먼저 올리면 아래 항목이 자동으로 채워집니다</h4>' +
         '<p class="hint">당사 시스템에서 나오는 해지패널티 계산 자료를 첨부하면 아래 계산기 항목(적립금·날짜·금리 등)을 자동으로 인식해서 채워줍니다. 이미지(스크린샷, 사진) 또는 엑셀 파일(.xlsx/.xls/.csv)을 지원하며, 여러 개 첨부할 수 있습니다. 파일은 서버로 전송되지 않고 이 화면 안에서만 처리됩니다. 자동으로 채워진 값은 아래에서 언제든 직접 수정할 수 있습니다.</p>' +
-        '<input type="file" accept="image/*,.xlsx,.xls,.csv,.pdf" data-field="attachmentFile" />' +
+        '<input type="file" accept="image/*,.xlsx,.xls,.csv,.pdf" data-field="attachmentFile" multiple />' +
         '<div class="autofill-summary" data-role="autofillSummary"></div>' +
         '<div class="attachment-list" data-role="attachmentList"></div>' +
       '</div>' +
@@ -593,16 +593,31 @@
     });
 
     refs.attachmentFileInput.addEventListener("change", function () {
-      var file = refs.attachmentFileInput.files && refs.attachmentFileInput.files[0];
+      var files = refs.attachmentFileInput.files ? Array.prototype.slice.call(refs.attachmentFileInput.files) : [];
       refs.attachmentFileInput.value = "";
-      if (!file) return;
+      if (!files.length) return;
 
+      // 명세엑셀 + 해지패널티엑셀 + 상품설명서 PDF처럼 여러 파일을 한 번에 선택해도
+      // 순서대로 하나씩 처리한다 — 카드 병합 로직이 "이 카드에 이미 어떤 상품이
+      // 들어있는지"를 참고하므로, 동시에 처리하면 서로의 결과를 못 보고 카드가
+      // 중복 생성될 수 있다.
+      var fileQueueIdx = 0;
+      function processNextQueuedFile() {
+        if (fileQueueIdx >= files.length) return;
+        var file = files[fileQueueIdx++];
+        processOneAttachmentFile(file, processNextQueuedFile);
+      }
+      processNextQueuedFile();
+    });
+
+    function processOneAttachmentFile(file, done) {
       if (/^image\//.test(file.type)) {
         var reader = new FileReader();
         reader.onload = function () {
           p.attachments.push({ id: state.nextId++, kind: "image", name: file.name, dataUrl: reader.result });
           renderProductAttachments(p);
           renderReport();
+          done();
         };
         reader.readAsDataURL(file);
         return;
@@ -611,11 +626,13 @@
       if (/\.(xlsx|xls|csv)$/i.test(file.name)) {
         if (typeof XLSX === "undefined") {
           alert("엑셀을 읽는 기능을 불러오지 못했습니다. 페이지를 새로고침한 뒤 다시 시도해주세요.");
+          done();
           return;
         }
         parseSpreadsheetFile(file, function (err, sheets) {
           if (err || !sheets || !sheets.length) {
             alert("이 파일을 열 수 없습니다. 비밀번호가 걸려 있거나 지원하지 않는 형식일 수 있습니다.");
+            done();
             return;
           }
 
@@ -662,6 +679,7 @@
             }
             updateProductChrome();
             renderReport();
+            done();
             return;
           }
 
@@ -673,6 +691,7 @@
           renderAutofillSummary(p, applied, file.name);
           updateProductPenaltyModeUI(p);
           renderReport();
+          done();
         });
         return;
       }
@@ -680,11 +699,13 @@
       if (/\.pdf$/i.test(file.name)) {
         if (typeof pdfjsLib === "undefined") {
           alert("PDF를 읽는 기능을 불러오지 못했습니다. 페이지를 새로고침한 뒤 다시 시도해주세요.");
+          done();
           return;
         }
         extractPdfPenaltyClauses(file, function (err, result) {
           if (err) {
             alert("이 PDF를 열 수 없습니다. 비밀번호가 걸려 있거나 지원하지 않는 형식일 수 있습니다.");
+            done();
             return;
           }
           var matchedTier = null;
@@ -744,12 +765,14 @@
           renderProductAttachments(p);
           renderPdfSnippetsSummary(p, result, file.name, matchedTier, elapsedMonths, matchedFlatRatio, flatMatchReason);
           renderReport();
+          done();
         });
         return;
       }
 
       alert("이미지(스크린샷, 사진), 엑셀 파일(.xlsx/.xls/.csv) 또는 PDF만 첨부할 수 있습니다.");
-    });
+      done();
+    }
 
     renderProductWithdrawalRows(p);
     renderProductAttachments(p);
