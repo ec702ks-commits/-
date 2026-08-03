@@ -689,9 +689,35 @@
             }
           }
           var matchedFlatRatio = null;
+          var flatMatchReason = null;
           if (!matchedTier && result.flatRatios && result.flatRatios.length) {
             var flatPcts = distinctFlatPcts(result.flatRatios);
-            if (flatPcts.length === 1) matchedFlatRatio = result.flatRatios[0];
+            if (flatPcts.length === 1) {
+              matchedFlatRatio = result.flatRatios[0];
+              flatMatchReason = "unique";
+            } else {
+              // 문서 하나에 상품(또는 옵션)이 여러 개라 비율도 여러 종류면, 이미 이 카드에
+              // 입력돼 있는 "상품명"과 PDF에서 찾은 상품명이 서로 포함 관계로 일치하는
+              // 후보가 정확히 하나일 때만 그걸로 자동 설정한다(상품명이 없거나 여러 개와
+              // 겹치면 애매하니 자동 적용하지 않고 후보만 보여준다).
+              var productLabelNorm = normalizeLabelText(refs.labelInput.value);
+              if (productLabelNorm) {
+                // 완전히 같은 이름이 있으면 그것을 우선(예: "OO보험" vs "OO보험(디폴트옵션)"처럼
+                // 기본형 이름이 변형 이름의 앞부분과 겹치는 경우, 포함 관계만 보면 둘 다
+                // 걸려서 오히려 더 애매해지므로 정확히 같은 이름을 먼저 찾는다).
+                var exactLabelMatches = result.flatRatios.filter(function (fr) {
+                  return fr.productName && normalizeLabelText(fr.productName) === productLabelNorm;
+                });
+                var labelMatches = exactLabelMatches.length ? exactLabelMatches : result.flatRatios.filter(function (fr) {
+                  if (!fr.productName) return false;
+                  return normalizeLabelText(fr.productName).indexOf(productLabelNorm) !== -1;
+                });
+                if (labelMatches.length === 1) {
+                  matchedFlatRatio = labelMatches[0];
+                  flatMatchReason = "label";
+                }
+              }
+            }
           }
           if (matchedTier) {
             refs.penaltyModeRatio.checked = true;
@@ -705,10 +731,10 @@
           p.attachments.push({
             id: state.nextId++, kind: "pdf", name: file.name, snippets: result.snippets,
             pageCount: result.pageCount, breakpoints: result.breakpoints, matchedTier: matchedTier,
-            flatRatios: result.flatRatios, matchedFlatRatio: matchedFlatRatio
+            flatRatios: result.flatRatios, matchedFlatRatio: matchedFlatRatio, flatMatchReason: flatMatchReason
           });
           renderProductAttachments(p);
-          renderPdfSnippetsSummary(p, result, file.name, matchedTier, elapsedMonths, matchedFlatRatio);
+          renderPdfSnippetsSummary(p, result, file.name, matchedTier, elapsedMonths, matchedFlatRatio, flatMatchReason);
           renderReport();
         });
         return;
@@ -1150,7 +1176,7 @@
   }
 
   // PDF는 값을 계산기에 자동으로 채우지 않고, 찾은 문구만 그대로 보여준다(직접 확인 후 입력).
-  function renderPdfSnippetsSummary(p, result, fileName, matchedTier, elapsedMonths, matchedFlatRatio) {
+  function renderPdfSnippetsSummary(p, result, fileName, matchedTier, elapsedMonths, matchedFlatRatio, flatMatchReason) {
     var box = p.refs.autofillSummaryEl;
     if (!box) return;
     var snippets = result.snippets;
@@ -1173,9 +1199,12 @@
           '<pre class="pdf-snippet">' + escapeHtml(breakpoints.map(function (b) { return b.raw; }).join("\n")) + '</pre>' +
         '</div>';
     } else if (matchedFlatRatio) {
+      var matchReasonText = flatMatchReason === "label"
+        ? "이 카드의 상품명(\"" + escapeHtml(p.refs.labelInput.value) + "\")과 PDF 안의 상품명이 일치하는 항목을 찾아 자동으로 설정했습니다."
+        : "경과기간 구분 없는 고정 중도해지비율을 찾아서 자동으로 설정했습니다.";
       tierHtml =
         '<div class="autofill-note autofill-ok">' +
-          '<p><strong>경과기간 구분 없는 고정 중도해지비율을 찾아서 자동으로 설정했습니다.</strong></p>' +
+          '<p><strong>' + matchReasonText + '</strong></p>' +
           '<p>' + (matchedFlatRatio.productName ? '[' + escapeHtml(matchedFlatRatio.productName) + '] ' : '') + '"' + escapeHtml(matchedFlatRatio.raw) + '" → 적용이율 비율 <strong>' + matchedFlatRatio.pct + '%</strong>로 설정</p>' +
           '<p class="cell-note">자동으로 채운 값이니 아래 "적용이율 비율" 칸에서 다시 한 번 확인해주세요.</p>' +
         '</div>';
@@ -1886,7 +1915,8 @@
             html += '<p class="cell-note">경과기간별 적용비율표에서 "' + escapeHtml(a.matchedTier.raw) + '" 구간이 적용되어 적용이율 비율 <strong>' + a.matchedTier.pct + '%</strong>로 자동 설정됨</p>';
           } else if (a.matchedFlatRatio) {
             html += '<p class="cell-note">' + (a.matchedFlatRatio.productName ? '[' + escapeHtml(a.matchedFlatRatio.productName) + '] ' : '') +
-              '"' + escapeHtml(a.matchedFlatRatio.raw) + '"에서 적용이율 비율 <strong>' + a.matchedFlatRatio.pct + '%</strong>로 자동 설정됨</p>';
+              '"' + escapeHtml(a.matchedFlatRatio.raw) + '"에서 적용이율 비율 <strong>' + a.matchedFlatRatio.pct + '%</strong>로 자동 설정됨' +
+              (a.flatMatchReason === "label" ? ' (상품명 일치로 자동 선택됨)' : '') + '</p>';
           } else if (a.flatRatios && a.flatRatios.length > 1) {
             html += '<p class="cell-note">고정 중도해지비율 후보 ' + a.flatRatios.length + '개 발견(상품/옵션이 여러 개라 자동 설정 안 됨) — 아래에서 확인 후 직접 입력 필요</p>';
             html += '<pre class="pdf-snippet">' + escapeHtml(a.flatRatios.map(function (r2) { return (r2.productName ? '[' + r2.productName + '] ' : '') + r2.raw; }).join("\n")) + '</pre>';
