@@ -369,12 +369,13 @@ footer {
 }
 
 .db-row-name {
-  flex: 1;
+  flex: 1 1 160px;
+  min-width: 0;
   font-size: 0.88rem;
   word-break: break-all;
 }
 
-.db-row-phone {
+.db-row input.db-row-phone {
   width: 140px;
   flex-shrink: 0;
 }
