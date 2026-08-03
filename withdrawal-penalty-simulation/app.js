@@ -670,17 +670,27 @@
               matchedTier = matchPenaltyTier(result.breakpoints, elapsedMonths);
             }
           }
+          var matchedFlatRatio = null;
+          if (!matchedTier && result.flatRatios && result.flatRatios.length) {
+            var flatPcts = distinctFlatPcts(result.flatRatios);
+            if (flatPcts.length === 1) matchedFlatRatio = result.flatRatios[0];
+          }
           if (matchedTier) {
             refs.penaltyModeRatio.checked = true;
             updateProductPenaltyModeUI(p);
             refs.appliedRatePctInput.value = matchedTier.pct;
+          } else if (matchedFlatRatio) {
+            refs.penaltyModeRatio.checked = true;
+            updateProductPenaltyModeUI(p);
+            refs.appliedRatePctInput.value = matchedFlatRatio.pct;
           }
           p.attachments.push({
             id: state.nextId++, kind: "pdf", name: file.name, snippets: result.snippets,
-            pageCount: result.pageCount, breakpoints: result.breakpoints, matchedTier: matchedTier
+            pageCount: result.pageCount, breakpoints: result.breakpoints, matchedTier: matchedTier,
+            flatRatios: result.flatRatios, matchedFlatRatio: matchedFlatRatio
           });
           renderProductAttachments(p);
-          renderPdfSnippetsSummary(p, result, file.name, matchedTier, elapsedMonths);
+          renderPdfSnippetsSummary(p, result, file.name, matchedTier, elapsedMonths, matchedFlatRatio);
           renderReport();
         });
         return;
@@ -876,10 +886,16 @@
     // "asOfDate"(적립금기준일자)를 사용한다.
     { field: "contractDate", type: "date", displayLabel: "명세일자(계약일)", headers: ["명세일자"] },
     { field: "asOfDate", type: "date", displayLabel: "적립금기준일자", headers: ["적립금기준일자", "평가기준일", "기준일자", "산출기준일"] },
+    // "경과일"(명세일자 이후 지난 일수)만 있고 별도 기준일자 컬럼이 없는 자료(예: 상품운용현황)를 위한 보조 필드.
+    // asOfDate가 없을 때만 "명세일자 + 경과일"로 적립금기준일자를 대신 계산하는 데 쓴다.
+    { field: "elapsedDays", type: "number", displayLabel: "경과일", headers: ["경과일"] },
     { field: "maturityDate", type: "date", displayLabel: "만기일", headers: ["만기일자", "만기일"] },
     { field: "principal", type: "amount", displayLabel: "현재 적립금", headers: ["적립금", "현재적립금", "평가금액"] },
     { field: "contributionPrincipal", type: "amount", displayLabel: "납입원금", headers: ["납입원금", "납입원본", "가입원금"] },
-    { field: "contractRate", type: "rate", displayLabel: "약정금리(명세 적용이율)", headers: ["명세적용이율", "적용이율", "약정금리", "계약금리", "적용금리"] },
+    { field: "contractRate", type: "rate", displayLabel: "약정금리(명세 적용이율)", headers: ["명세적용이율", "적용이율", "약정금리", "계약금리", "적용금리", "적용이율(단리환산)"] },
+    // "3.4% (3.52%)"처럼 괄호 안에 단리환산 참고값이 함께 있는 경우, contractRate는 앞 숫자(실제 적용이율)만
+    // 쓰고 원본 텍스트는 이 필드로 따로 받아서 적용 요약에 참고용으로 표시한다(값을 잃어버리지 않도록).
+    { field: "contractRateRaw", type: "text", displayLabel: "적용이율 원본", headers: ["적용이율(단리환산)"] },
     { field: "directCancelAmount", type: "amount", displayLabel: "해지적립금(해지환급금)", headers: ["해지환급금", "해지적립금", "해지후적립금", "재예치가능금액"] },
     { field: "directPenaltyAmount", type: "amount", displayLabel: "해지패널티 금액", headers: ["중도해지페널티", "중도해지패널티", "해지패널티", "해지패널티금액", "패널티"] },
     { field: "withdrawalDate", type: "date", displayLabel: "중간인출 일자", headers: ["인출일자", "출금일자", "인출일", "중도인출일자", "중도인출일"] },
@@ -914,6 +930,10 @@
     if (type === "rate") {
       var m = /(\d+(\.\d+)?)/.exec(String(raw));
       return m ? parseFloat(m[1]) : null;
+    }
+    if (type === "number") {
+      var n = parseFloat(String(raw).replace(/[^\d.\-]/g, ""));
+      return isNaN(n) ? null : n;
     }
     return null;
   }
@@ -981,7 +1001,21 @@
     }
 
     var asOfDateValue = extracted.asOfDate ? extracted.asOfDate.value : null;
+    var asOfDateNote = "";
     delete extracted.asOfDate;
+
+    var elapsedDaysValue = extracted.elapsedDays ? extracted.elapsedDays.value : null;
+    delete extracted.elapsedDays;
+    if (!asOfDateValue && elapsedDaysValue !== null && extracted.contractDate) {
+      var contractStartD = parseDateUTC(extracted.contractDate.value);
+      if (contractStartD) {
+        asOfDateValue = formatDateUTC(new Date(contractStartD.getTime() + elapsedDaysValue * 86400000));
+        asOfDateNote = " — 명세일자 + 경과일(" + elapsedDaysValue + "일)로 자동계산";
+      }
+    }
+
+    var contractRateRawValue = extracted.contractRateRaw ? extracted.contractRateRaw.value : null;
+    delete extracted.contractRateRaw;
 
     var withdrawalDateValue = extracted.withdrawalDate ? extracted.withdrawalDate.value : null;
     var withdrawalAmountValue = extracted.withdrawalAmount ? extracted.withdrawalAmount.value : null;
@@ -990,9 +1024,17 @@
 
     var applied = applyExtractedFields(targetProduct, extracted);
 
+    if (contractRateRawValue && contractRateRawValue.indexOf("(") !== -1) {
+      applied.forEach(function (a) {
+        if (a.field === "contractRate") {
+          a.label = a.label + "(원본 표기: " + contractRateRawValue + ")";
+        }
+      });
+    }
+
     targetProduct.principalAsOfDate = asOfDateValue;
     if (asOfDateValue) {
-      applied.push({ field: "asOfDate", label: "적립금기준일자(경과이자 계산 기준, 화면에는 표시 안 됨)", display: asOfDateValue });
+      applied.push({ field: "asOfDate", label: "적립금기준일자(경과이자 계산 기준, 화면에는 표시 안 됨)" + asOfDateNote, display: asOfDateValue });
     }
 
     if (withdrawalDateValue && withdrawalAmountValue) {
@@ -1068,11 +1110,12 @@
   }
 
   // PDF는 값을 계산기에 자동으로 채우지 않고, 찾은 문구만 그대로 보여준다(직접 확인 후 입력).
-  function renderPdfSnippetsSummary(p, result, fileName, matchedTier, elapsedMonths) {
+  function renderPdfSnippetsSummary(p, result, fileName, matchedTier, elapsedMonths, matchedFlatRatio) {
     var box = p.refs.autofillSummaryEl;
     if (!box) return;
     var snippets = result.snippets;
     var breakpoints = result.breakpoints;
+    var flatRatios = result.flatRatios;
 
     var tierHtml = "";
     if (matchedTier) {
@@ -1088,6 +1131,19 @@
         '<div class="autofill-note pdf-found">' +
           '<p><strong>경과기간별 적용비율표를 찾았지만, 현재 경과기간에 자동으로 매칭하지 못했습니다.</strong> 아래 표를 보고 직접 "적용이율 비율" 칸에 입력해주세요.</p>' +
           '<pre class="pdf-snippet">' + escapeHtml(breakpoints.map(function (b) { return b.raw; }).join("\n")) + '</pre>' +
+        '</div>';
+    } else if (matchedFlatRatio) {
+      tierHtml =
+        '<div class="autofill-note autofill-ok">' +
+          '<p><strong>경과기간 구분 없는 고정 중도해지비율을 찾아서 자동으로 설정했습니다.</strong></p>' +
+          '<p>' + (matchedFlatRatio.productName ? '[' + escapeHtml(matchedFlatRatio.productName) + '] ' : '') + '"' + escapeHtml(matchedFlatRatio.raw) + '" → 적용이율 비율 <strong>' + matchedFlatRatio.pct + '%</strong>로 설정</p>' +
+          '<p class="cell-note">자동으로 채운 값이니 아래 "적용이율 비율" 칸에서 다시 한 번 확인해주세요.</p>' +
+        '</div>';
+    } else if (flatRatios && flatRatios.length > 1) {
+      tierHtml =
+        '<div class="autofill-note pdf-found">' +
+          '<p><strong>고정 중도해지비율 후보를 ' + flatRatios.length + '개 찾았지만, 상품(또는 옵션)이 여러 개라 자동으로 정하지 못했습니다.</strong> 아래에서 가입하신 상품에 맞는 비율을 확인하고 "적용이율 비율" 칸에 직접 입력해주세요.</p>' +
+          '<pre class="pdf-snippet">' + escapeHtml(flatRatios.map(function (r) { return (r.productName ? '[' + r.productName + '] ' : '') + r.raw; }).join("\n")) + '</pre>' +
         '</div>';
     }
 
@@ -1214,6 +1270,42 @@
     return unit === "년" ? n * 12 : n;
   }
 
+  // 경과기간 구분 없이 "중도해지이율은 적용이율의 60%"처럼 고정 비율만 있는 경우를 찾는다.
+  // 문서 한 개에 상품(또는 디폴트옵션 등 변형) 여러 개가 실려 있으면 비율도 여러 개일 수
+  // 있어, 그런 경우엔 각 비율이 어느 상품명 아래에서 나왔는지 함께 기록해 후보로 보여준다
+  // (자동 적용은 비율이 문서 전체에서 하나로만 정해질 때만 한다).
+  function parseFlatPenaltyRatios(lines) {
+    var re = /(적용이율|약정이율|계약이율|만기이율)\s*의\s*(\d+(?:\.\d+)?)\s*%/;
+    var currentProductName = null;
+    var results = [];
+    var seen = {};
+    lines.forEach(function (line) {
+      var trimmed = line.trim();
+      var pm = /^상품명\s*(.+)/.exec(trimmed);
+      if (pm) {
+        currentProductName = pm[1].trim();
+        return;
+      }
+      var m = re.exec(trimmed);
+      if (!m) return;
+      var pct = parseFloat(m[2]);
+      var key = pct + "|" + (currentProductName || "");
+      if (seen[key]) return;
+      seen[key] = true;
+      results.push({ pct: pct, raw: trimmed, productName: currentProductName });
+    });
+    return results;
+  }
+
+  // 문서 전체에서 서로 다른 비율(%) 값이 몇 종류인지 센다 — 하나뿐이면 자동 적용해도 안전하다.
+  function distinctFlatPcts(flatRatios) {
+    var pcts = [];
+    flatRatios.forEach(function (r) {
+      if (pcts.indexOf(r.pct) === -1) pcts.push(r.pct);
+    });
+    return pcts;
+  }
+
   // 구간이 정확히 하나만 걸리는 경우에만 자동 적용한다(겹치거나 빈 구간이 있어
   // 애매하면 자동 적용하지 않고 RM이 직접 확인하게 한다).
   function matchPenaltyTier(breakpoints, elapsedMonths) {
@@ -1245,7 +1337,8 @@
           perPageLines.forEach(function (pl) { allLines = allLines.concat(pl); });
           var snippets = findPenaltyClauseSnippets(allLines);
           var breakpoints = parsePenaltyRateTable(allLines);
-          callback(null, { snippets: snippets, pageCount: doc.numPages, breakpoints: breakpoints });
+          var flatRatios = breakpoints.length ? [] : parseFlatPenaltyRatios(allLines);
+          callback(null, { snippets: snippets, pageCount: doc.numPages, breakpoints: breakpoints, flatRatios: flatRatios });
         });
       }).catch(function (e) {
         callback(e, null);
