@@ -1073,6 +1073,12 @@
     var missingCount = state.filtered.filter(function (c) { return c.phoneMissing; }).length;
     var hint = monthValue + " 만기예정 고객 " + state.filtered.length + "명이 검색되었습니다.";
     if (missingCount) hint += " (연락처를 찾지 못한 고객 " + missingCount + "명 포함)";
+
+    var unparsedDateCount = state.products.rows.filter(function (row) { return !parseDate(row[m.date]); }).length;
+    if (unparsedDateCount) {
+      hint += " · 주의: 원본 엑셀에서 만기일을 인식하지 못한 행이 " + unparsedDateCount + "건 있어 어떤 달을 선택해도 나타나지 않습니다(해당 행의 만기일 칸 형식을 확인해주세요).";
+    }
+
     el.filterResultHint.textContent = hint;
 
     el.stepTemplate.classList.remove("hidden");
@@ -1381,9 +1387,11 @@
 
     fillSimpleOptions(el.filterOrg, orgs, "전체 단체");
     el.filterOrgWrap.classList.toggle("hidden", orgs.length === 0);
+    el.filterOrg.value = "";
 
     fillSimpleOptions(el.filterType, types, "전체 상품유형");
     el.filterTypeWrap.classList.toggle("hidden", types.length === 0);
+    el.filterType.value = "";
 
     el.filterName.value = "";
     el.filterStatus.value = "";
