@@ -620,19 +620,21 @@
           }
 
           // 1) "헤더 한 줄 + 상품별 데이터행" 표 형식 먼저 시도(당사 시스템 다건 조회 자료 등).
-          //    행이 여러 개면 첫 행은 이 카드에, 나머지는 새 상품카드를 자동으로 추가해 채운다.
-          //    단, 상품명+명세일자가 이미 있는 카드와 같으면(예: 같은 상품을 "상품운용현황"과
-          //    "해지패널티 계산자료" 두 파일로 나눠 올린 경우) 새 카드를 또 만들지 않고 그
-          //    기존 카드에 값을 합쳐 넣는다 — 같은 상품이 카드 여러 개로 쪼개지는 것을 방지.
+          //    행이 여러 개면, 상품명+명세일자가 이미 있는 카드와 같은 행은 그 기존 카드에
+          //    합쳐 넣는다(같은 상품을 "상품운용현황"과 "해지패널티 계산자료" 두 파일로
+          //    나눠 올려도 카드가 쪼개지지 않도록). 나머지는 새 상품카드를 자동으로 추가해
+          //    채운다. 이 카드(p)가 이미 다른 상품으로 채워져 있으면, 매칭되지 않는 행으로
+          //    그 내용을 덮어쓰지 않는다 — p가 비어 있을 때만 첫 매칭 없는 행을 채우는 용도로 쓴다.
           var tableRecords = extractTableRecordsFromSheets(sheets);
           if (tableRecords.length) {
+            var pIsBlank = normalizeLabelText(refs.labelInput.value) === "";
             var pUsedForTable = false;
             var targets = tableRecords.map(function (rec) {
               var existing = findMatchingProductForRecord(rec);
               var targetProduct;
               if (existing) {
                 targetProduct = existing;
-              } else if (!pUsedForTable) {
+              } else if (pIsBlank && !pUsedForTable) {
                 targetProduct = p;
                 pUsedForTable = true;
               } else {
@@ -642,15 +644,21 @@
               updateProductPenaltyModeUI(targetProduct);
               return { product: targetProduct, applied: applied, merged: !!existing };
             });
-            targets[0].product.attachments.push({ id: state.nextId++, kind: "excel", name: file.name, sheets: sheets, appliedFields: targets[0].applied });
-            renderProductAttachments(targets[0].product);
+
+            // 첨부파일 자체는 항상 업로드한 이 카드(p)에 기록해서, 이 카드에서 첨부 목록이
+            // 계속 쌓이는 걸 볼 수 있게 한다 — 실제 값이 다른 카드로 갔더라도 마찬가지.
+            var pTarget = targets.filter(function (t) { return t.product === p; })[0];
+            p.attachments.push({ id: state.nextId++, kind: "excel", name: file.name, sheets: sheets, appliedFields: pTarget ? pTarget.applied : [] });
+            renderProductAttachments(p);
+
             targets.forEach(function (t, idx) {
               renderAutofillSummary(t.product, t.applied, file.name, targets.length, idx, t.merged);
             });
-            if (!pUsedForTable && p.refs.autofillSummaryEl) {
-              var mergedLabels = targets.map(function (t) { return t.product.refs.labelInput.value; }).filter(Boolean).join(", ");
+
+            if (!pTarget && p.refs.autofillSummaryEl) {
+              var otherLabels = targets.map(function (t) { return t.product.refs.labelInput.value; }).filter(Boolean).join(", ");
               p.refs.autofillSummaryEl.innerHTML =
-                '<div class="autofill-note autofill-ok"><p><strong>"' + escapeHtml(file.name) + '"에서 인식한 상품이 이미 있는 카드(' + escapeHtml(mergedLabels) + ')와 같아, 새 카드를 만들지 않고 그 카드에 합쳐서 반영했습니다.</strong> 아래에서 해당 카드를 확인하세요.</p></div>';
+                '<div class="autofill-note autofill-ok"><p><strong>"' + escapeHtml(file.name) + '"에서 인식한 상품(' + escapeHtml(otherLabels) + ')이 이 카드와는 달라서, 기존/새 카드로 나눠 반영했습니다.</strong> 이 카드의 내용은 바뀌지 않았습니다.</p></div>';
             }
             updateProductChrome();
             renderReport();
@@ -982,6 +990,9 @@
     return null;
   }
 
+  // 표 맨 아래에 흔히 붙는 "합계/총계" 행은 실제 상품이 아니므로 상품카드로 만들지 않는다.
+  var TABLE_SUMMARY_ROW_LABELS = ["합계", "총계", "소계", "계", "total", "sum"];
+
   function extractTableRecordsFromSheets(sheets) {
     var records = [];
     sheets.forEach(function (sheet) {
@@ -1002,6 +1013,7 @@
             }
           });
           if (!any) break;
+          if (rec.label && TABLE_SUMMARY_ROW_LABELS.indexOf(normalizeLabelText(String(rec.label)).toLowerCase()) !== -1) continue;
           records.push(rec);
         }
         break; // 시트당 표 하나만 처리
