@@ -54,6 +54,7 @@
   var HISTORY_KEY = "dcirp_sms_history_v1";
   var HISTORY_MAX_ENTRIES = 5000;
   var MONTHLY_RATE_KEY = "dcirp_sms_monthly_rate_v1";
+  var TWO_YEAR_RATE_KEY = "dcirp_sms_two_year_rate_v1";
   var DEFAULT_OPTION_RATE_KEY = "dcirp_sms_default_option_rate_v1";
   var MANUAL_IMAGE_KEY = "dcirp_sms_manual_image_v1";
   var MANUAL_IMAGE_MAX_BYTES = 3 * 1024 * 1024;
@@ -64,7 +65,8 @@
     "삼성생명 퇴직연금부 구태형 과장입니다.\n\n" +
     "퇴직연금 상품 만기예정건이 있어 안내드립니다.\n\n" +
     "{만기내역}\n\n" +
-    "{해당월}월 이율보증형3년 상품으로 지시하시면 적용이율은 {해당월이율}%입니다.\n\n" +
+    "{해당월}월 이율보증형3년 상품으로 지시하시면 적용이율은 {해당월이율}%,\n" +
+    "이율보증형2년 상품으로 지시하시면 적용이율은 {2년이율}%입니다.\n\n" +
     "별도지시없이 기존 상품 만기 되셔도 디폴트 옵션 상품으로 운용 됩니다. <적용이율 {디폴트옵션이율}%>\n\n" +
     "참고 부탁드리며 퇴직연금 관련 문의사항 있으시면 언제든지 연락 부탁드립니다! 감사합니다!";
 
@@ -124,6 +126,7 @@
     el.filterResultHint = document.getElementById("filterResultHint");
     el.templateInput = document.getElementById("templateInput");
     el.monthlyRate = document.getElementById("monthlyRate");
+    el.twoYearRate = document.getElementById("twoYearRate");
     el.defaultOptionRate = document.getElementById("defaultOptionRate");
     el.applyTemplate = document.getElementById("applyTemplate");
     el.resetTemplateBtn = document.getElementById("resetTemplate");
@@ -153,6 +156,7 @@
 
     el.templateInput.value = localStorage.getItem(TEMPLATE_STORAGE_KEY) || DEFAULT_TEMPLATE;
     el.monthlyRate.value = localStorage.getItem(MONTHLY_RATE_KEY) || "";
+    el.twoYearRate.value = localStorage.getItem(TWO_YEAR_RATE_KEY) || "";
     el.defaultOptionRate.value = localStorage.getItem(DEFAULT_OPTION_RATE_KEY) || "";
     state.manualImageDataUrl = localStorage.getItem(MANUAL_IMAGE_KEY) || null;
 
@@ -1053,16 +1057,25 @@
     return isNaN(num) ? 0 : num;
   }
 
+  function formatProductLabel(p) {
+    var parts = [];
+    if (p.type) parts.push("[" + p.type + "]");
+    if (p.product) parts.push(p.product);
+    return parts.join(" ");
+  }
+
   function buildMaturityDetails(products) {
     if (products.length > 1) {
       var lines = products.map(function (p) {
-        return "만기예정일 " + formatDate(p.date) + "일   적립금 " + formatBalance(p.balance) + "원";
+        var label = formatProductLabel(p);
+        return (label ? label + "   " : "") + "만기예정일 " + formatDate(p.date) + "일   적립금 " + formatBalance(p.balance) + "원";
       });
       var total = products.reduce(function (sum, p) { return sum + parseBalanceNumber(p.balance); }, 0);
       return lines.join("\n") + "\n적립금 계    " + total.toLocaleString("ko-KR") + "원";
     }
     var p = products[0] || {};
-    return "만기예정일 " + formatDate(p.date) + "일\n적립금 계    " + formatBalance(p.balance) + "원";
+    var label = formatProductLabel(p);
+    return (label ? label + "\n" : "") + "만기예정일 " + formatDate(p.date) + "일\n적립금 계    " + formatBalance(p.balance) + "원";
   }
 
   function renderTemplate(template, customer) {
@@ -1081,6 +1094,7 @@
       .replace(/\{상품목록\}/g, buildProductList(customer.products))
       .replace(/\{해당월\}/g, monthNumber)
       .replace(/\{해당월이율\}/g, el.monthlyRate.value.trim())
+      .replace(/\{2년이율\}/g, el.twoYearRate.value.trim())
       .replace(/\{디폴트옵션이율\}/g, el.defaultOptionRate.value.trim());
   }
 
@@ -1221,6 +1235,7 @@
     var template = el.templateInput.value;
     localStorage.setItem(TEMPLATE_STORAGE_KEY, template);
     localStorage.setItem(MONTHLY_RATE_KEY, el.monthlyRate.value.trim());
+    localStorage.setItem(TWO_YEAR_RATE_KEY, el.twoYearRate.value.trim());
     localStorage.setItem(DEFAULT_OPTION_RATE_KEY, el.defaultOptionRate.value.trim());
 
     if (!state.filtered.length) {

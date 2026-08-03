@@ -120,10 +120,11 @@
 
   <section id="step-template" class="card hidden">
     <h2>4. 문자 문구</h2>
-    <p class="hint">사용 가능한 자리표시자: {이름} {단체명} {만기내역}("만기예정일 ~일 / 적립금 계 ~원" — 상품이 여러 개면 건별로 나열 후 적립금 합계까지 자동 계산) {상품목록}(상품유형+상품명 목록) — {상품유형} {상품명} {만기일} {적립금}은 그중 첫 번째 상품 기준입니다. {해당월}은 3번에서 고른 대상 월입니다.</p>
+    <p class="hint">사용 가능한 자리표시자: {이름} {단체명} {만기내역}(상품유형·상품명과 함께 "만기예정일 ~일 / 적립금 ~원"을 상품별로 나열 — 2개 이상이면 적립금 합계까지 자동 계산) {상품목록}(상품유형+상품명 목록) — {상품유형} {상품명} {만기일} {적립금}은 그중 첫 번째 상품 기준입니다. {해당월}은 3번에서 고른 대상 월입니다.</p>
 
     <div class="mapping-grid" style="margin-bottom: 10px;">
       <label>{해당월이율} — 이번 달 이율보증형3년 적용이율(%) <input type="text" id="monthlyRate" placeholder="예: 2.5" /></label>
+      <label>{2년이율} — 이번 달 이율보증형2년 적용이율(%) <input type="text" id="twoYearRate" placeholder="예: 2.7" /></label>
       <label>{디폴트옵션이율} — 이번 달 디폴트옵션 적용이율(%) <input type="text" id="defaultOptionRate" placeholder="예: 2.0" /></label>
     </div>
 
