@@ -621,19 +621,37 @@
 
           // 1) "헤더 한 줄 + 상품별 데이터행" 표 형식 먼저 시도(당사 시스템 다건 조회 자료 등).
           //    행이 여러 개면 첫 행은 이 카드에, 나머지는 새 상품카드를 자동으로 추가해 채운다.
+          //    단, 상품명+명세일자가 이미 있는 카드와 같으면(예: 같은 상품을 "상품운용현황"과
+          //    "해지패널티 계산자료" 두 파일로 나눠 올린 경우) 새 카드를 또 만들지 않고 그
+          //    기존 카드에 값을 합쳐 넣는다 — 같은 상품이 카드 여러 개로 쪼개지는 것을 방지.
           var tableRecords = extractTableRecordsFromSheets(sheets);
           if (tableRecords.length) {
-            var targets = tableRecords.map(function (rec, idx) {
-              var targetProduct = idx === 0 ? p : addProduct();
+            var pUsedForTable = false;
+            var targets = tableRecords.map(function (rec) {
+              var existing = findMatchingProductForRecord(rec);
+              var targetProduct;
+              if (existing) {
+                targetProduct = existing;
+              } else if (!pUsedForTable) {
+                targetProduct = p;
+                pUsedForTable = true;
+              } else {
+                targetProduct = addProduct();
+              }
               var applied = applyTableRecordToProduct(targetProduct, rec);
               updateProductPenaltyModeUI(targetProduct);
-              return { product: targetProduct, applied: applied };
+              return { product: targetProduct, applied: applied, merged: !!existing };
             });
             targets[0].product.attachments.push({ id: state.nextId++, kind: "excel", name: file.name, sheets: sheets, appliedFields: targets[0].applied });
             renderProductAttachments(targets[0].product);
             targets.forEach(function (t, idx) {
-              renderAutofillSummary(t.product, t.applied, file.name, targets.length, idx);
+              renderAutofillSummary(t.product, t.applied, file.name, targets.length, idx, t.merged);
             });
+            if (!pUsedForTable && p.refs.autofillSummaryEl) {
+              var mergedLabels = targets.map(function (t) { return t.product.refs.labelInput.value; }).filter(Boolean).join(", ");
+              p.refs.autofillSummaryEl.innerHTML =
+                '<div class="autofill-note autofill-ok"><p><strong>"' + escapeHtml(file.name) + '"에서 인식한 상품이 이미 있는 카드(' + escapeHtml(mergedLabels) + ')와 같아, 새 카드를 만들지 않고 그 카드에 합쳐서 반영했습니다.</strong> 아래에서 해당 카드를 확인하세요.</p></div>';
+            }
             updateProductChrome();
             renderReport();
             return;
@@ -966,6 +984,26 @@
     return records;
   }
 
+  // 표 형식 자료의 한 행(rec)이 이미 화면에 있는 상품카드 중 하나와 같은 상품인지 찾는다.
+  // 상품명이 같고(공백 무시), 명세일자가 둘 다 있으면 그것도 같아야 매칭으로 본다 —
+  // 상품명만으로는 같은 파일 안의 "동일 상품, 다른 시점 자료" 여러 행을 하나로 잘못
+  // 합칠 수 있어서, 명세일자까지 같을 때만 합친다.
+  function findMatchingProductForRecord(rec) {
+    if (!rec.label) return null;
+    var labelNorm = normalizeLabelText(rec.label);
+    if (!labelNorm) return null;
+    var found = null;
+    state.products.some(function (prod) {
+      var prodLabelNorm = normalizeLabelText(prod.refs.labelInput.value);
+      if (!prodLabelNorm || prodLabelNorm !== labelNorm) return false;
+      var prodStart = prod.refs.startDateInput.value;
+      if (rec.contractDate && prodStart && rec.contractDate !== prodStart) return false;
+      found = prod;
+      return true;
+    });
+    return found;
+  }
+
   function tableRecordToExtracted(rec) {
     var extracted = {};
     TABLE_HEADER_FIELD_SPECS.forEach(function (spec) {
@@ -1086,13 +1124,15 @@
     return applied;
   }
 
-  function renderAutofillSummary(p, applied, fileName, totalRecords, recordIndex) {
+  function renderAutofillSummary(p, applied, fileName, totalRecords, recordIndex, merged) {
     var box = p.refs.autofillSummaryEl;
     if (!box) return;
     var multiNote = "";
     if (totalRecords && totalRecords > 1) {
-      multiNote = '<p class="autofill-multi-note">이 파일에서 상품 정보 ' + totalRecords + '건을 인식했습니다. 이 카드에는 ' + (recordIndex + 1) + '번째 항목을 채웠습니다' +
-        (recordIndex === 0 ? ' (나머지 ' + (totalRecords - 1) + '건은 새 상품카드로 자동 추가되었습니다).' : '.') + '</p>';
+      multiNote = '<p class="autofill-multi-note">이 파일에서 상품 정보 ' + totalRecords + '건을 인식했습니다' +
+        (recordIndex !== undefined && recordIndex !== null ? ' (이 카드는 그 중 ' + (recordIndex + 1) + '번째 항목' + (merged ? ", 기존 카드와 병합됨" : "") + ')' : '') + '.</p>';
+    } else if (merged) {
+      multiNote = '<p class="autofill-multi-note">기존에 입력되어 있던 같은 상품 카드와 병합되었습니다(중복 카드를 만들지 않음).</p>';
     }
     if (!applied || !applied.length) {
       box.innerHTML = multiNote +
@@ -1841,9 +1881,15 @@
             html += renderSheetTableHtml(sheet);
           });
         } else if (a.kind === "pdf") {
-          html += '<p class="cell-note">' + escapeHtml(a.name) + ' — 중도해지 관련 문구(참고용, RM 확인 필요)</p>';
+          html += '<p class="cell-note">' + escapeHtml(a.name) + ' — 상품설명서 중 중도해지 관련 문구(참고용, RM 확인 필요)</p>';
           if (a.matchedTier) {
             html += '<p class="cell-note">경과기간별 적용비율표에서 "' + escapeHtml(a.matchedTier.raw) + '" 구간이 적용되어 적용이율 비율 <strong>' + a.matchedTier.pct + '%</strong>로 자동 설정됨</p>';
+          } else if (a.matchedFlatRatio) {
+            html += '<p class="cell-note">' + (a.matchedFlatRatio.productName ? '[' + escapeHtml(a.matchedFlatRatio.productName) + '] ' : '') +
+              '"' + escapeHtml(a.matchedFlatRatio.raw) + '"에서 적용이율 비율 <strong>' + a.matchedFlatRatio.pct + '%</strong>로 자동 설정됨</p>';
+          } else if (a.flatRatios && a.flatRatios.length > 1) {
+            html += '<p class="cell-note">고정 중도해지비율 후보 ' + a.flatRatios.length + '개 발견(상품/옵션이 여러 개라 자동 설정 안 됨) — 아래에서 확인 후 직접 입력 필요</p>';
+            html += '<pre class="pdf-snippet">' + escapeHtml(a.flatRatios.map(function (r2) { return (r2.productName ? '[' + r2.productName + '] ' : '') + r2.raw; }).join("\n")) + '</pre>';
           }
           a.snippets.forEach(function (s) {
             html += '<pre class="pdf-snippet">' + escapeHtml(s) + '</pre>';
