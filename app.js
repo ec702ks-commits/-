@@ -87,6 +87,7 @@
     el.useStoredContactsBtn = document.getElementById("useStoredContacts");
     el.clearContactsDbBtn = document.getElementById("clearContactsDb");
     el.exportContactsDbBtn = document.getElementById("exportContactsDb");
+    el.emailContactsDbBtn = document.getElementById("emailContactsDb");
     el.importContactsDbInput = document.getElementById("importContactsDbInput");
     el.manageContactsDbBtn = document.getElementById("manageContactsDb");
     el.contactsDbManager = document.getElementById("contactsDbManager");
@@ -228,6 +229,7 @@
     });
 
     el.exportContactsDbBtn.addEventListener("click", exportContactsDb);
+    el.emailContactsDbBtn.addEventListener("click", shareContactsDbEmail);
     el.importContactsDbInput.addEventListener("change", handleImportContactsDb);
 
     el.manageContactsDbBtn.addEventListener("click", function () {
@@ -455,6 +457,57 @@
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  }
+
+  function csvEscape(value) {
+    var s = String(value === undefined || value === null ? "" : value);
+    if (/[",\r\n]/.test(s)) {
+      s = '"' + s.replace(/"/g, '""') + '"';
+    }
+    return s;
+  }
+
+  function buildContactsDbCsv(db) {
+    var rows = [["이름", "보조키", "연락처"]];
+    Object.keys(db.map).sort(function (a, b) { return a.localeCompare(b, "ko"); }).forEach(function (key) {
+      var parts = key.split("|");
+      rows.push([parts[0], parts[1] || "", formatPhoneDisplay(db.map[key])]);
+    });
+    return rows.map(function (r) { return r.map(csvEscape).join(","); }).join("\r\n");
+  }
+
+  function shareContactsDbEmail() {
+    var db = state.storedContactsDb || loadContactsDb();
+    if (!db || !db.count) {
+      alert("보낼 연락처 DB가 없습니다.");
+      return;
+    }
+
+    var csv = "﻿" + buildContactsDbCsv(db);
+    var today = new Date();
+    var dateStr = today.getFullYear() + String(today.getMonth() + 1).padStart(2, "0") + String(today.getDate()).padStart(2, "0");
+    var filename = "연락처DB_" + dateStr + ".csv";
+
+    if (navigator.share) {
+      try {
+        var file = new File([csv], filename, { type: "text/csv" });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          navigator.share({ files: [file], title: "연락처 DB", text: "연락처 DB (" + db.count + "건)" }).catch(function () {});
+          return;
+        }
+      } catch (e) {}
+    }
+
+    var blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    alert("이 기기/브라우저에서는 공유하기가 지원되지 않아 파일을 다운로드했습니다. 메일 앱에서 직접 첨부해서 보내주세요.");
   }
 
   function handleImportContactsDb(evt) {
@@ -1451,14 +1504,24 @@
     if (cur) cur.classList.remove("focus-current");
 
     var items = el.customerList.querySelectorAll(".customer-item");
+    var searching = el.filterName.value.trim().length > 0;
+
     for (var i = 0; i < items.length; i++) {
       var item = items[i];
-      if (item.classList.contains("done") || item.classList.contains("missing-phone") || item.classList.contains("hidden-by-filter")) continue;
+      if (item.classList.contains("hidden-by-filter")) continue;
+      // While actively searching by name, surface a match even if it's already
+      // marked done/missing-phone, so a customer wrongly marked "sent" (e.g. the
+      // 카톡 share sheet was closed without actually sending) can be found again
+      // without leaving focus mode.
+      if (!searching && (item.classList.contains("done") || item.classList.contains("missing-phone"))) continue;
       item.classList.add("focus-current");
       el.focusDoneMsg.classList.add("hidden");
       item.scrollIntoView({ behavior: "smooth", block: "start" });
       return;
     }
+    el.focusDoneMsg.textContent = searching
+      ? "검색과 일치하는 고객이 없습니다."
+      : "이 조건에서 미발송 고객이 모두 처리되었습니다 🎉";
     el.focusDoneMsg.classList.remove("hidden");
   }
 
