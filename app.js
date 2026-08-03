@@ -92,6 +92,8 @@
     el.contactsDbManager = document.getElementById("contactsDbManager");
     el.contactsDbSearch = document.getElementById("contactsDbSearch");
     el.contactsDbList = document.getElementById("contactsDbList");
+    el.selectAllContactsCheckbox = document.getElementById("selectAllContacts");
+    el.deleteSelectedContactsBtn = document.getElementById("deleteSelectedContacts");
     el.newContactName = document.getElementById("newContactName");
     el.newContactAux = document.getElementById("newContactAux");
     el.newContactPhone = document.getElementById("newContactPhone");
@@ -240,6 +242,30 @@
       renderContactsDbList(el.contactsDbSearch.value);
     });
 
+    el.selectAllContactsCheckbox.addEventListener("change", function () {
+      var checked = el.selectAllContactsCheckbox.checked;
+      el.contactsDbList.querySelectorAll(".db-row-check").forEach(function (box) {
+        box.checked = checked;
+      });
+      updateDeleteSelectedButton();
+    });
+
+    el.deleteSelectedContactsBtn.addEventListener("click", function () {
+      var boxes = Array.prototype.slice.call(el.contactsDbList.querySelectorAll(".db-row-check:checked"));
+      if (!boxes.length) return;
+      if (!confirm(boxes.length + "건을 삭제할까요? 이 동작은 되돌릴 수 없습니다.")) return;
+
+      var db = state.storedContactsDb;
+      if (!db) return;
+      boxes.forEach(function (box) {
+        delete db.map[box.dataset.key];
+      });
+      state.storedContactsDb = saveContactsDb(db.map);
+      refreshContactsDbUI();
+      el.contactsDbManager.classList.remove("hidden");
+      renderContactsDbList(el.contactsDbSearch.value);
+    });
+
     el.addContactEntryBtn.addEventListener("click", function () {
       var name = el.newContactName.value.trim();
       var phone = buildPhoneNumber(el.newContactPhone.value, "");
@@ -289,33 +315,52 @@
     }
   }
 
+  var CONTACTS_DB_PAGE_SIZE = 200;
+
+  function updateDeleteSelectedButton() {
+    var checked = el.contactsDbList.querySelectorAll(".db-row-check:checked").length;
+    el.deleteSelectedContactsBtn.disabled = checked === 0;
+    el.deleteSelectedContactsBtn.textContent = "선택 삭제 (" + checked + ")";
+    var allBoxes = el.contactsDbList.querySelectorAll(".db-row-check");
+    el.selectAllContactsCheckbox.checked = allBoxes.length > 0 && checked === allBoxes.length;
+  }
+
   function renderContactsDbList(query) {
     var db = state.storedContactsDb;
     el.contactsDbList.innerHTML = "";
+    el.selectAllContactsCheckbox.checked = false;
+    updateDeleteSelectedButton();
     if (!db) return;
 
     var q = query.trim();
-    if (!q) {
-      el.contactsDbList.innerHTML = '<p class="hint">이름을 검색하면 목록이 나타납니다. (전체 ' + db.count + '건)</p>';
-      return;
-    }
-
     var keys = Object.keys(db.map).filter(function (key) {
-      return key.split("|")[0].indexOf(q) !== -1;
-    });
+      return !q || key.split("|")[0].indexOf(q) !== -1;
+    }).sort(function (a, b) { return a.localeCompare(b, "ko"); });
 
     if (!keys.length) {
-      el.contactsDbList.innerHTML = '<p class="hint">일치하는 연락처가 없습니다.</p>';
+      el.contactsDbList.innerHTML = '<p class="hint">' + (q ? "일치하는 연락처가 없습니다." : "저장된 연락처가 없습니다.") + '</p>';
       return;
     }
 
-    keys.slice(0, 50).forEach(function (key) {
+    var header = document.createElement("div");
+    header.className = "db-row-header";
+    header.innerHTML = '<span style="width: 16px;"></span><span style="flex: 1;">이름</span><span style="width: 140px;">연락처</span>';
+    el.contactsDbList.appendChild(header);
+
+    keys.slice(0, CONTACTS_DB_PAGE_SIZE).forEach(function (key) {
       var parts = key.split("|");
       var name = parts[0];
       var aux = parts[1] || "";
 
       var row = document.createElement("div");
       row.className = "db-row";
+
+      var checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.className = "db-row-check";
+      checkbox.dataset.key = key;
+      checkbox.addEventListener("change", updateDeleteSelectedButton);
+      row.appendChild(checkbox);
 
       var label = document.createElement("span");
       label.className = "db-row-name";
@@ -355,10 +400,10 @@
       el.contactsDbList.appendChild(row);
     });
 
-    if (keys.length > 50) {
+    if (keys.length > CONTACTS_DB_PAGE_SIZE) {
       var more = document.createElement("p");
       more.className = "hint";
-      more.textContent = (keys.length - 50) + "건 더 있습니다. 검색어를 더 구체적으로 입력해주세요.";
+      more.textContent = (keys.length - CONTACTS_DB_PAGE_SIZE) + "건 더 있습니다. 검색어를 입력해서 좁혀보세요.";
       el.contactsDbList.appendChild(more);
     }
   }
