@@ -1991,9 +1991,17 @@
     if (history) {
       var breakdown = " (순원금" + (history.netPrincipalEstimated ? "(추정)" : "") + " " + formatWon(history.netPrincipal) +
         " + 누적이자 " + formatWon(Math.max(0, history.balanceToday - history.netPrincipal)) + ")";
+      // 입력한 인출 이력 중 적립금 산정일 이전(또는 오늘 이후) 날짜는 계산에서 제외된다
+      // (적립금 산정일 이전 인출은 이미 그 적립금 값 자체에 반영돼 있다고 보기 때문) —
+      // 그런데 그 사실이 화면에 아무 표시 없이 조용히 빠지면, "인출 이력을 넣어도
+      // 적립금/해지적립금이 안 바뀐다"는 오해를 사기 쉬워서 왜 빠졌는지 명시한다.
+      var excludedCount = events.length - history.events.length;
+      var excludedNote = excludedCount > 0
+        ? " · 인출 이력 " + excludedCount + "건은 적립금 산정일(" + formatDateUTC(c.start) + ") 이전(또는 오늘 이후)이라 이미 적립금에 반영된 것으로 보고 제외했습니다"
+        : "";
       refs.historySummaryEl.textContent =
         (history.hasEvents ? "인출 이력 " + history.events.length + "건 반영 · 인출총액 " + formatWon(history.withdrawnTotal) + " · " : "") +
-        "오늘 기준 실제 잔액(세전, 추정) " + formatWon(history.balanceToday) + breakdown;
+        "오늘 기준 실제 잔액(세전, 추정) " + formatWon(history.balanceToday) + breakdown + excludedNote;
     } else {
       refs.historySummaryEl.textContent = "";
     }
