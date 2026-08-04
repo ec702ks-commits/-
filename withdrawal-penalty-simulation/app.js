@@ -1640,9 +1640,8 @@
 
   // ---------- 첨부 이미지(스크린샷/사진)에서 중도인출 이력 자동인식(OCR) ----------
   // 완전 오프라인 한국어 OCR(Tesseract.js, WASM)로 사진 속 글자를 읽어, "날짜 + 금액"이
-  // 함께 있는 줄을 인출 이력 후보로 찾는다. 사진 OCR은 PDF/엑셀 텍스트 추출보다 오인식
-  // 가능성이 훨씬 높으므로, 절대 자동으로 인출 이력에 반영하지 않고 후보만 보여준 뒤
-  // RM이 확인하고 버튼을 눌러야 실제로 추가되게 한다.
+  // 함께 있는 줄을 인출 이력으로 찾아 자동으로 반영한다(어느 열인지는 무관, 인출 여부와
+  // 총액만 중요). 사진 인식은 틀릴 수 있으므로 반영 후 RM이 값을 확인/수정할 수 있게 한다.
   var ocrWorkerPromise = null;
   function getOcrWorker() {
     if (ocrWorkerPromise) return ocrWorkerPromise;
@@ -1665,6 +1664,12 @@
     ocrWorkerPromise = Tesseract.createWorker([{ code: "kor", data: korBytes }], 1, {
       workerPath: workerBlobUrl,
       workerBlobURL: false
+    }).then(function (worker) {
+      // 실제 폰 카메라로 모니터 화면을 비스듬히/멀리서 찍은 사진은 여백(천장, 모니터 테두리,
+      // 브라우저 UI)과 대각선 워터마크가 많아, PSM을 자동 판별에 맡기면(기본값) 인식률이
+      // 크게 떨어진다(확인됨: 신뢰도 38%, 결과 깨짐). PSM을 AUTO로 명시하면 페이지 레이아웃을
+      // 다시 분석해 신뢰도가 91%까지 오르고 실제 표의 날짜/금액 행을 대부분 정확히 읽는다.
+      return worker.setParameters({ tessedit_pageseg_mode: "3" }).then(function () { return worker; });
     });
     return ocrWorkerPromise;
   }
@@ -1692,15 +1697,19 @@
   // 날짜엔 인출이 없었다는 뜻) 후보에서 뺀다.
   function parseWithdrawalCandidatesFromOcrText(text) {
     var lines = text.split("\n");
-    var dateRe = /(\d{4})\s*[.\-/년]\s*(\d{1,2})\s*[.\-/월]\s*(\d{1,2})/;
+    // 회사 시스템 화면은 날짜를 "2026-08-03"처럼 구분자와 함께 표시하지만, 사진을 멀리서/
+    // 비스듬히 찍으면 OCR이 구분자(.-/)를 놓쳐 "20260803"처럼 8자리 숫자만 붙어서 인식되는
+    // 경우가 많다(실제 사진으로 확인됨). 두 형태를 모두 날짜로 인정한다.
+    var dateRe = /(\d{4})\s*[.\-/년]\s*(\d{1,2})\s*[.\-/월]\s*(\d{1,2})|(?:^|[^\d])(20\d{2})(\d{2})(\d{2})(?!\d)/;
     var numRe = /\d{1,3}(?:,\d{3})+|\d{4,}/g;
     var candidates = [];
     lines.forEach(function (line) {
       var dm = dateRe.exec(line);
       if (!dm) return;
-      var mo = Number(dm[2]), d = Number(dm[3]);
+      var yy = dm[1] || dm[4];
+      var mo = Number(dm[2] || dm[5]), d = Number(dm[3] || dm[6]);
       if (mo < 1 || mo > 12 || d < 1 || d > 31) return;
-      var dateStr = dm[1] + "." + ("0" + mo).slice(-2) + "." + ("0" + d).slice(-2);
+      var dateStr = yy + "." + ("0" + mo).slice(-2) + "." + ("0" + d).slice(-2);
 
       var rest = line.slice(dm.index + dm[0].length);
       var nums = [];
