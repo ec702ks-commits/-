@@ -28,6 +28,18 @@ OUT="dist/중도해지_패널티_시뮬레이션.html"
   cat vendor/pdf.worker.min.js
   echo '</script>'
   echo '<script>'
+  cat vendor/tesseract.min.js
+  echo '</script>'
+  echo '<script>'
+  cat vendor/tess-worker-src.js
+  echo '</script>'
+  echo '<script>'
+  cat vendor/tess-core-src.js
+  echo '</script>'
+  echo '<script>'
+  cat vendor/tess-kor-data-b64.js
+  echo '</script>'
+  echo '<script>'
   cat app.js
   echo '</script>'
   echo '</body>'

@@ -617,7 +617,27 @@
           p.attachments.push({ id: state.nextId++, kind: "image", name: file.name, dataUrl: reader.result });
           renderProductAttachments(p);
           renderReport();
-          done();
+
+          if (typeof Tesseract === "undefined") {
+            done();
+            return;
+          }
+          if (p.refs.autofillSummaryEl) {
+            p.refs.autofillSummaryEl.innerHTML =
+              '<div class="autofill-note pdf-found"><p>"' + escapeHtml(file.name) + '" 사진에서 인출 이력을 찾는 중입니다(처음 한 번은 시간이 좀 걸릴 수 있어요)...</p></div>';
+          }
+          runOcrOnImageFile(file, function (err, text) {
+            if (err || !text) {
+              if (p.refs.autofillSummaryEl) {
+                p.refs.autofillSummaryEl.innerHTML = '<div class="autofill-note autofill-none">"' + escapeHtml(file.name) + '" 사진에서 글자를 인식하지 못했습니다. 직접 입력해주세요.</div>';
+              }
+              done();
+              return;
+            }
+            var candidates = parseWithdrawalCandidatesFromOcrText(text);
+            renderOcrWithdrawalSummary(p, candidates, file.name);
+            done();
+          });
         };
         reader.readAsDataURL(file);
         return;
@@ -1518,6 +1538,110 @@
     };
     reader.onerror = function () { callback(new Error("read failed"), null); };
     reader.readAsArrayBuffer(file);
+  }
+
+  // ---------- 첨부 이미지(스크린샷/사진)에서 중도인출 이력 자동인식(OCR) ----------
+  // 완전 오프라인 한국어 OCR(Tesseract.js, WASM)로 사진 속 글자를 읽어, "날짜 + 금액"이
+  // 함께 있는 줄을 인출 이력 후보로 찾는다. 사진 OCR은 PDF/엑셀 텍스트 추출보다 오인식
+  // 가능성이 훨씬 높으므로, 절대 자동으로 인출 이력에 반영하지 않고 후보만 보여준 뒤
+  // RM이 확인하고 버튼을 눌러야 실제로 추가되게 한다.
+  var ocrWorkerPromise = null;
+  function getOcrWorker() {
+    if (ocrWorkerPromise) return ocrWorkerPromise;
+    if (typeof Tesseract === "undefined") return Promise.reject(new Error("Tesseract not available"));
+    var korDataB64 = window.__TESS_KOR_DATA_B64;
+    var coreSrc = window.__TESS_CORE_SRC;
+    var workerSrc = window.__TESS_WORKER_SRC;
+    if (!korDataB64 || !coreSrc || !workerSrc) return Promise.reject(new Error("OCR assets not available"));
+
+    var binStr = atob(korDataB64);
+    var korBytes = new Uint8Array(binStr.length);
+    for (var i = 0; i < binStr.length; i++) korBytes[i] = binStr.charCodeAt(i);
+
+    // 워커 스크립트는 file://에서 임의의 상대경로로는 새 Worker를 만들 수 없고 blob: URL로만
+    // 가능하다(확인됨). 코어(wasm)와 워커 스크립트를 하나로 합쳐 blob으로 만들면, 워커
+    // 스크립트가 코어를 별도로 fetch하지 않고 이미 정의된 TesseractCore를 그대로 쓴다.
+    var combinedBlob = new Blob([coreSrc, "\n", workerSrc], { type: "application/javascript" });
+    var workerBlobUrl = URL.createObjectURL(combinedBlob);
+
+    ocrWorkerPromise = Tesseract.createWorker([{ code: "kor", data: korBytes }], 1, {
+      workerPath: workerBlobUrl,
+      workerBlobURL: false
+    });
+    return ocrWorkerPromise;
+  }
+
+  function runOcrOnImageFile(file, callback) {
+    getOcrWorker().then(function (worker) {
+      var reader = new FileReader();
+      reader.onload = function () {
+        worker.recognize(new Uint8Array(reader.result)).then(function (result) {
+          callback(null, result.data.text);
+        }).catch(function (e) { callback(e, null); });
+      };
+      reader.onerror = function () { callback(new Error("read failed"), null); };
+      reader.readAsArrayBuffer(file);
+    }).catch(function (e) { callback(e, null); });
+  }
+
+  // OCR 결과 텍스트에서 "날짜"와 그 뒤에 나오는 "금액"이 같은 줄에 있으면 인출 이력
+  // 후보 하나로 본다(인출 이력 표는 보통 한 줄에 한 건씩 나오므로).
+  function parseWithdrawalCandidatesFromOcrText(text) {
+    var lines = text.split("\n");
+    var dateRe = /(\d{4})\s*[.\-/년]\s*(\d{1,2})\s*[.\-/월]\s*(\d{1,2})/;
+    var amountRe = /\d{1,3}(?:,\d{3})+|\d{5,}/;
+    var candidates = [];
+    var seen = {};
+    lines.forEach(function (line) {
+      var dm = dateRe.exec(line);
+      if (!dm) return;
+      var mo = Number(dm[2]), d = Number(dm[3]);
+      if (mo < 1 || mo > 12 || d < 1 || d > 31) return;
+      var dateStr = dm[1] + "." + ("0" + mo).slice(-2) + "." + ("0" + d).slice(-2);
+
+      var rest = line.slice(dm.index + dm[0].length);
+      var am = amountRe.exec(rest);
+      if (!am) return;
+      var amountNum = parseInt(am[0].replace(/,/g, ""), 10);
+      if (!amountNum || amountNum <= 0) return;
+
+      var key = dateStr + "|" + amountNum;
+      if (seen[key]) return;
+      seen[key] = true;
+      candidates.push({ date: dateStr, amount: amountNum, raw: line.trim() });
+    });
+    return candidates;
+  }
+
+  function renderOcrWithdrawalSummary(p, candidates, fileName) {
+    var box = p.refs.autofillSummaryEl;
+    if (!box) return;
+    if (!candidates.length) {
+      box.innerHTML = '<div class="autofill-note autofill-none">"' + escapeHtml(fileName) + '" 사진에서 인출 날짜/금액을 찾지 못했습니다. 직접 입력해주세요.</div>';
+      return;
+    }
+    var itemsHtml = candidates.map(function (c, i) {
+      return '<div class="flat-ratio-candidate">' +
+        '<p class="cell-note">' + escapeHtml(c.date) + ' / ' + formatWon(c.amount) + '</p>' +
+        '<button type="button" class="btn small ocr-withdrawal-add-btn" data-idx="' + i + '">인출 이력에 추가</button>' +
+      '</div>';
+    }).join("");
+    box.innerHTML =
+      '<div class="autofill-note pdf-found">' +
+        '<p><strong>"' + escapeHtml(fileName) + '" 사진에서 인출 이력 후보 ' + candidates.length + '건을 찾았습니다(사진 인식이라 틀릴 수 있어요).</strong> 맞으면 "인출 이력에 추가"를 눌러주세요. 틀렸으면 무시하고 아래에 직접 입력하세요.</p>' +
+        itemsHtml +
+      '</div>';
+    box.querySelectorAll(".ocr-withdrawal-add-btn").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var idx = parseInt(btn.getAttribute("data-idx"), 10);
+        var c = candidates[idx];
+        p.withdrawals.push({ id: state.nextId++, date: c.date, amount: Math.round(c.amount).toLocaleString("ko-KR") });
+        renderProductWithdrawalRows(p);
+        renderReport();
+        btn.disabled = true;
+        btn.textContent = "추가됨";
+      });
+    });
   }
 
   // 첨부 자료 표에서 불필요한 개인정보 열은 빼고, 자주 길어지는 열은 넓게 표시한다.
