@@ -385,8 +385,8 @@
 
       '<div class="product-subsection attachment-subsection">' +
         '<h4>해지패널티 계산 자료 첨부(선택) — 먼저 올리면 아래 항목이 자동으로 채워집니다</h4>' +
-        '<p class="hint">당사 시스템에서 나오는 해지패널티 계산 자료를 첨부하면 아래 계산기 항목(적립금·날짜·금리 등)을 자동으로 인식해서 채워줍니다. 이미지(스크린샷, 사진) 또는 엑셀 파일(.xlsx/.xls/.csv)을 지원하며, 여러 개 첨부할 수 있습니다. 파일은 서버로 전송되지 않고 이 화면 안에서만 처리됩니다. 자동으로 채워진 값은 아래에서 언제든 직접 수정할 수 있습니다.</p>' +
-        '<input type="file" accept="image/*,.xlsx,.xls,.csv,.pdf" data-field="attachmentFile" multiple />' +
+        '<p class="hint">당사 시스템에서 나오는 해지패널티 계산 자료를 첨부하면 아래 계산기 항목(적립금·날짜·금리 등)을 자동으로 인식해서 채워줍니다. 엑셀 파일(.xlsx/.xls/.csv) 또는 상품설명서 PDF를 지원하며, 여러 개 첨부할 수 있습니다. 파일은 서버로 전송되지 않고 이 화면 안에서만 처리됩니다. 자동으로 채워진 값은 아래에서 언제든 직접 수정할 수 있습니다.</p>' +
+        '<input type="file" accept=".xlsx,.xls,.csv,.pdf" data-field="attachmentFile" multiple />' +
         '<div class="autofill-summary" data-role="autofillSummary"></div>' +
         '<div class="attachment-list" data-role="attachmentList"></div>' +
       '</div>' +
@@ -597,19 +597,17 @@
       refs.attachmentFileInput.value = "";
       if (!files.length) return;
 
-      // 명세엑셀 + 해지패널티엑셀 + 상품설명서 PDF + 사진처럼 여러 파일을 한 번에
-      // 선택해도 순서대로 하나씩 처리한다 — 카드 병합 로직이 "이 카드에 이미 어떤
-      // 상품이 들어있는지"를 참고하므로, 동시에 처리하면 서로의 결과를 못 보고
-      // 카드가 중복 생성될 수 있다. 처리 순서도 중요하다: 상품설명서(PDF)는
-      // 상품명이 이미 카드에 채워져 있어야 어느 카드에 적용할지 매칭할 수 있는데,
-      // 파일 선택 창에서 고른 순서가 항상 "엑셀 먼저"라는 보장이 없다(운영체제/선택
-      // 방식에 따라 뒤바뀔 수 있음). 그래서 실제 선택 순서와 무관하게 항상
-      // 엑셀/CSV(상품명 등을 채움) → PDF(그 상품명을 보고 매칭) → 이미지 순으로
-      // 정렬해서 처리한다.
+      // 명세엑셀 + 해지패널티엑셀 + 상품설명서 PDF처럼 여러 파일을 한 번에 선택해도
+      // 순서대로 하나씩 처리한다 — 카드 병합 로직이 "이 카드에 이미 어떤 상품이
+      // 들어있는지"를 참고하므로, 동시에 처리하면 서로의 결과를 못 보고 카드가
+      // 중복 생성될 수 있다. 처리 순서도 중요하다: 상품설명서(PDF)는 상품명이 이미
+      // 카드에 채워져 있어야 어느 카드에 적용할지 매칭할 수 있는데, 파일 선택 창에서
+      // 고른 순서가 항상 "엑셀 먼저"라는 보장이 없다(운영체제/선택 방식에 따라
+      // 뒤바뀔 수 있음). 그래서 실제 선택 순서와 무관하게 항상 엑셀/CSV(상품명 등을
+      // 채움) → PDF(그 상품명을 보고 매칭) 순으로 정렬해서 처리한다.
       var typeOrder = { xlsx: 0, xls: 0, csv: 0, pdf: 1 };
       files.sort(function (a, b) {
         function rank(f) {
-          if (/^image\//.test(f.type)) return 2;
           var ext = (/\.([^.]+)$/.exec(f.name) || [])[1];
           return typeOrder.hasOwnProperty(ext && ext.toLowerCase()) ? typeOrder[ext.toLowerCase()] : 1;
         }
@@ -626,51 +624,6 @@
     });
 
     function processOneAttachmentFile(file, done) {
-      if (/^image\//.test(file.type)) {
-        var reader = new FileReader();
-        reader.onload = function () {
-          p.attachments.push({ id: state.nextId++, kind: "image", name: file.name, dataUrl: reader.result });
-          renderProductAttachments(p);
-          renderReport();
-
-          // 이 카드에 이미 (PDF 등으로) 적용이율 비율이 설정돼 있으면, 이미지 업로드로
-          // 요약 박스 내용이 바뀌어도 그 값이 사라진 게 아니라는 걸 알 수 있게 안내를
-          // 같이 보여준다(값 자체는 그대로 유지되지만, 요약 박스가 최근 작업 하나만
-          // 보여주는 방식이라 화면에서 안 보이면 사라진 것처럼 오해할 수 있어서).
-          var ratioReminderHtml = "";
-          if (p.refs.penaltyModeRatio.checked && p.refs.appliedRatePctInput.value) {
-            ratioReminderHtml = '<p class="cell-note">(참고: 이 카드에 적용이율 비율 <strong>' + escapeHtml(p.refs.appliedRatePctInput.value) + '%</strong>가 이미 설정되어 있고, 계속 유지됩니다 — 아래 이미지 인식 결과와는 별개입니다.)</p>';
-          }
-
-          if (typeof Tesseract === "undefined") {
-            done();
-            return;
-          }
-          if (p.refs.autofillSummaryEl) {
-            p.refs.autofillSummaryEl.innerHTML = ratioReminderHtml +
-              '<div class="autofill-note pdf-found"><p>"' + escapeHtml(file.name) + '" 사진에서 인출 이력을 찾는 중입니다(처음 한 번은 시간이 좀 걸릴 수 있어요)...</p></div>';
-          }
-          runOcrOnImageFile(file, function (err, text) {
-            if (err || !text) {
-              if (p.refs.autofillSummaryEl) {
-                p.refs.autofillSummaryEl.innerHTML = ratioReminderHtml +
-                  '<div class="autofill-note autofill-none">"' + escapeHtml(file.name) + '" 사진에서 글자를 인식하지 못했습니다. 직접 입력해주세요.</div>';
-              }
-              done();
-              return;
-            }
-            var candidates = parseWithdrawalCandidatesFromOcrText(text);
-            renderOcrWithdrawalSummary(p, candidates, file.name);
-            if (ratioReminderHtml && p.refs.autofillSummaryEl) {
-              p.refs.autofillSummaryEl.innerHTML = ratioReminderHtml + p.refs.autofillSummaryEl.innerHTML;
-            }
-            done();
-          });
-        };
-        reader.readAsDataURL(file);
-        return;
-      }
-
       if (/\.(xlsx|xls|csv)$/i.test(file.name)) {
         if (typeof XLSX === "undefined") {
           alert("엑셀을 읽는 기능을 불러오지 못했습니다. 페이지를 새로고침한 뒤 다시 시도해주세요.");
@@ -845,7 +798,7 @@
         return;
       }
 
-      alert("이미지(스크린샷, 사진), 엑셀 파일(.xlsx/.xls/.csv) 또는 PDF만 첨부할 수 있습니다.");
+      alert("엑셀 파일(.xlsx/.xls/.csv) 또는 PDF만 첨부할 수 있습니다.");
       done();
     }
 
@@ -861,17 +814,13 @@
       row.className = "attachment-row";
       var thumbHtml = a.kind === "excel"
         ? '<span class="attachment-thumb attachment-thumb-excel">표</span>'
-        : a.kind === "pdf"
-        ? '<span class="attachment-thumb attachment-thumb-pdf">PDF</span>'
-        : '<img class="attachment-thumb" src="' + a.dataUrl + '" alt="' + escapeAttr(a.name) + '" />';
+        : '<span class="attachment-thumb attachment-thumb-pdf">PDF</span>';
       var appliedCount = (a.appliedFields && a.appliedFields.length) || 0;
       var nameHtml = a.kind === "excel"
         ? escapeHtml(a.name) + '<span class="attachment-meta">' + a.sheets.length + '개 시트 · ' + a.sheets.reduce(function (s, sh) { return s + sh.rows.length; }, 0) + '행 인식됨' +
           (appliedCount ? ' · ' + appliedCount + '개 항목 자동입력됨' : '') + '</span>'
-        : a.kind === "pdf"
-        ? escapeHtml(a.name) + '<span class="attachment-meta">' + a.pageCount + '쪽 중 중도해지 관련 문구 ' + a.snippets.length + '건 찾음' +
-          (a.matchedTier ? ' · 적용이율 비율 ' + a.matchedTier.pct + '% 자동설정됨' : '') + '</span>'
-        : escapeHtml(a.name);
+        : escapeHtml(a.name) + '<span class="attachment-meta">' + a.pageCount + '쪽 중 중도해지 관련 문구 ' + a.snippets.length + '건 찾음' +
+          (a.matchedTier ? ' · 적용이율 비율 ' + a.matchedTier.pct + '% 자동설정됨' : '') + '</span>';
       row.innerHTML = thumbHtml +
         '<span class="attachment-name">' + nameHtml + '</span>' +
         '<button type="button" class="btn small danger" data-action="delete">삭제</button>';
@@ -1638,121 +1587,6 @@
     reader.readAsArrayBuffer(file);
   }
 
-  // ---------- 첨부 이미지(스크린샷/사진)에서 중도인출 이력 자동인식(OCR) ----------
-  // 완전 오프라인 한국어 OCR(Tesseract.js, WASM)로 사진 속 글자를 읽어, "날짜 + 금액"이
-  // 함께 있는 줄을 인출 이력으로 찾아 자동으로 반영한다(어느 열인지는 무관, 인출 여부와
-  // 총액만 중요). 사진 인식은 틀릴 수 있으므로 반영 후 RM이 값을 확인/수정할 수 있게 한다.
-  var ocrWorkerPromise = null;
-  function getOcrWorker() {
-    if (ocrWorkerPromise) return ocrWorkerPromise;
-    if (typeof Tesseract === "undefined") return Promise.reject(new Error("Tesseract not available"));
-    var korDataB64 = window.__TESS_KOR_DATA_B64;
-    var coreSrc = window.__TESS_CORE_SRC;
-    var workerSrc = window.__TESS_WORKER_SRC;
-    if (!korDataB64 || !coreSrc || !workerSrc) return Promise.reject(new Error("OCR assets not available"));
-
-    var binStr = atob(korDataB64);
-    var korBytes = new Uint8Array(binStr.length);
-    for (var i = 0; i < binStr.length; i++) korBytes[i] = binStr.charCodeAt(i);
-
-    // 워커 스크립트는 file://에서 임의의 상대경로로는 새 Worker를 만들 수 없고 blob: URL로만
-    // 가능하다(확인됨). 코어(wasm)와 워커 스크립트를 하나로 합쳐 blob으로 만들면, 워커
-    // 스크립트가 코어를 별도로 fetch하지 않고 이미 정의된 TesseractCore를 그대로 쓴다.
-    var combinedBlob = new Blob([coreSrc, "\n", workerSrc], { type: "application/javascript" });
-    var workerBlobUrl = URL.createObjectURL(combinedBlob);
-
-    ocrWorkerPromise = Tesseract.createWorker([{ code: "kor", data: korBytes }], 1, {
-      workerPath: workerBlobUrl,
-      workerBlobURL: false
-    }).then(function (worker) {
-      // 실제 폰 카메라로 모니터 화면을 비스듬히/멀리서 찍은 사진은 여백(천장, 모니터 테두리,
-      // 브라우저 UI)과 대각선 워터마크가 많아, PSM을 자동 판별에 맡기면(기본값) 인식률이
-      // 크게 떨어진다(확인됨: 신뢰도 38%, 결과 깨짐). PSM을 AUTO로 명시하면 페이지 레이아웃을
-      // 다시 분석해 신뢰도가 91%까지 오르고 실제 표의 날짜/금액 행을 대부분 정확히 읽는다.
-      return worker.setParameters({ tessedit_pageseg_mode: "3" }).then(function () { return worker; });
-    });
-    return ocrWorkerPromise;
-  }
-
-  function runOcrOnImageFile(file, callback) {
-    getOcrWorker().then(function (worker) {
-      var reader = new FileReader();
-      reader.onload = function () {
-        worker.recognize(new Uint8Array(reader.result)).then(function (result) {
-          callback(null, result.data.text);
-        }).catch(function (e) { callback(e, null); });
-      };
-      reader.onerror = function () { callback(new Error("read failed"), null); };
-      reader.readAsArrayBuffer(file);
-    }).catch(function (e) { callback(e, null); });
-  }
-
-  // OCR 결과 텍스트에서 "날짜"가 있는 줄을 찾아 인출 이력으로 본다. 회사 시스템의
-  // "적립금 입출금 이력" 같은 표는 한 줄에 [발생일자, 전기말적립금(그 시점 잔액),
-  // 부담금, 상품변경투입, 고유대기타유입액, 퇴직지급, 기타지급, 상품변경인출,
-  // 고유대기타유출액, 운용관리수수료, 자산관리수수료, 중도해지페널티, ...]처럼
-  // 여러 숫자 열이 나란히 있다. 어느 열에서 나왔는지는 중요하지 않고 "그 날짜에
-  // 얼마가 빠져나갔는지"만 필요하므로, 날짜 다음 첫 숫자(=그 시점 잔액)만 제외하고
-  // 나머지 0이 아닌 숫자를 전부 더해 그 날짜의 인출금액으로 본다. 전부 0이면(그
-  // 날짜엔 인출이 없었다는 뜻) 후보에서 뺀다.
-  function parseWithdrawalCandidatesFromOcrText(text) {
-    var lines = text.split("\n");
-    // 회사 시스템 화면은 날짜를 "2026-08-03"처럼 구분자와 함께 표시하지만, 사진을 멀리서/
-    // 비스듬히 찍으면 OCR이 구분자(.-/)를 놓쳐 "20260803"처럼 8자리 숫자만 붙어서 인식되는
-    // 경우가 많다(실제 사진으로 확인됨). 두 형태를 모두 날짜로 인정한다.
-    var dateRe = /(\d{4})\s*[.\-/년]\s*(\d{1,2})\s*[.\-/월]\s*(\d{1,2})|(?:^|[^\d])(20\d{2})(\d{2})(\d{2})(?!\d)/;
-    var numRe = /\d{1,3}(?:,\d{3})+|\d{4,}/g;
-    var candidates = [];
-    lines.forEach(function (line) {
-      var dm = dateRe.exec(line);
-      if (!dm) return;
-      var yy = dm[1] || dm[4];
-      var mo = Number(dm[2] || dm[5]), d = Number(dm[3] || dm[6]);
-      if (mo < 1 || mo > 12 || d < 1 || d > 31) return;
-      var dateStr = yy + "." + ("0" + mo).slice(-2) + "." + ("0" + d).slice(-2);
-
-      var rest = line.slice(dm.index + dm[0].length);
-      var nums = [];
-      var nm;
-      numRe.lastIndex = 0;
-      while ((nm = numRe.exec(rest))) {
-        var v = parseInt(nm[0].replace(/,/g, ""), 10);
-        if (!isNaN(v)) nums.push(v);
-      }
-      if (nums.length < 2) return;
-
-      var total = nums.slice(1).reduce(function (s, v) { return s + v; }, 0);
-      if (total <= 0) return;
-      candidates.push({ date: dateStr, amount: total, raw: line.trim() });
-    });
-    return candidates;
-  }
-
-  // 찾은 인출 후보를 곧바로 인출 이력에 반영한다(어느 열에서 나왔는지 구분해서
-  // 되묻지 않고, 그 날짜에 인출이 있었는지와 총액만 반영).
-  function renderOcrWithdrawalSummary(p, candidates, fileName) {
-    var box = p.refs.autofillSummaryEl;
-    if (!box) return;
-    if (!candidates.length) {
-      box.innerHTML = '<div class="autofill-note autofill-none">"' + escapeHtml(fileName) + '" 사진에서 인출 이력을 찾지 못했습니다. 직접 입력해주세요.</div>';
-      return;
-    }
-    candidates.forEach(function (cand) {
-      p.withdrawals.push({ id: state.nextId++, date: cand.date, amount: Math.round(cand.amount).toLocaleString("ko-KR") });
-    });
-    renderProductWithdrawalRows(p);
-    renderReport();
-
-    var itemsHtml = candidates.map(function (cand) {
-      return "<li>" + escapeHtml(cand.date) + " / " + formatWon(cand.amount) + "</li>";
-    }).join("");
-    box.innerHTML =
-      '<div class="autofill-note autofill-ok">' +
-        '<p><strong>"' + escapeHtml(fileName) + '" 사진에서 인출 이력 ' + candidates.length + '건을 자동으로 반영했습니다(사진 인식이라 틀릴 수 있어요).</strong> 아래 인출 이력에서 값을 확인하고, 필요하면 직접 수정하세요.</p>' +
-        "<ul>" + itemsHtml + "</ul>" +
-      "</div>";
-  }
-
   // 첨부 자료 표에서 불필요한 개인정보 열은 빼고, 자주 길어지는 열은 넓게 표시한다.
   // 열 위치는 파일마다 다를 수 있어 고정 인덱스 대신 헤더 텍스트로 찾는다.
   var ATTACHMENT_DROP_COLUMN_KEYWORDS = ["가입자번호", "가입자명", "주민번호"];
@@ -2310,7 +2144,7 @@
             }
             html += renderSheetTableHtml(sheet);
           });
-        } else if (a.kind === "pdf") {
+        } else {
           html += '<p class="cell-note">' + escapeHtml(a.name) + ' — 상품설명서 중 중도해지 관련 문구(참고용, RM 확인 필요)</p>';
           if (a.matchedTier) {
             html += '<p class="cell-note">경과기간별 적용비율표에서 "' + escapeHtml(a.matchedTier.raw) + '" 구간이 적용되어 적용이율 비율 <strong>' + a.matchedTier.pct + '%</strong>로 자동 설정됨</p>';
@@ -2328,8 +2162,6 @@
               : '<p class="cell-note">[공통 안내]</p>';
             html += '<pre class="pdf-snippet">' + escapeHtml(s.text) + '</pre>';
           });
-        } else {
-          html += '<img class="attachment-print-image" src="' + a.dataUrl + '" alt="해지패널티 계산 자료" />';
         }
       });
       html += '</div>';
