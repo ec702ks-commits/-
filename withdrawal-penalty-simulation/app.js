@@ -618,24 +618,37 @@
           renderProductAttachments(p);
           renderReport();
 
+          // 이 카드에 이미 (PDF 등으로) 적용이율 비율이 설정돼 있으면, 이미지 업로드로
+          // 요약 박스 내용이 바뀌어도 그 값이 사라진 게 아니라는 걸 알 수 있게 안내를
+          // 같이 보여준다(값 자체는 그대로 유지되지만, 요약 박스가 최근 작업 하나만
+          // 보여주는 방식이라 화면에서 안 보이면 사라진 것처럼 오해할 수 있어서).
+          var ratioReminderHtml = "";
+          if (p.refs.penaltyModeRatio.checked && p.refs.appliedRatePctInput.value) {
+            ratioReminderHtml = '<p class="cell-note">(참고: 이 카드에 적용이율 비율 <strong>' + escapeHtml(p.refs.appliedRatePctInput.value) + '%</strong>가 이미 설정되어 있고, 계속 유지됩니다 — 아래 이미지 인식 결과와는 별개입니다.)</p>';
+          }
+
           if (typeof Tesseract === "undefined") {
             done();
             return;
           }
           if (p.refs.autofillSummaryEl) {
-            p.refs.autofillSummaryEl.innerHTML =
+            p.refs.autofillSummaryEl.innerHTML = ratioReminderHtml +
               '<div class="autofill-note pdf-found"><p>"' + escapeHtml(file.name) + '" 사진에서 인출 이력을 찾는 중입니다(처음 한 번은 시간이 좀 걸릴 수 있어요)...</p></div>';
           }
           runOcrOnImageFile(file, function (err, text) {
             if (err || !text) {
               if (p.refs.autofillSummaryEl) {
-                p.refs.autofillSummaryEl.innerHTML = '<div class="autofill-note autofill-none">"' + escapeHtml(file.name) + '" 사진에서 글자를 인식하지 못했습니다. 직접 입력해주세요.</div>';
+                p.refs.autofillSummaryEl.innerHTML = ratioReminderHtml +
+                  '<div class="autofill-note autofill-none">"' + escapeHtml(file.name) + '" 사진에서 글자를 인식하지 못했습니다. 직접 입력해주세요.</div>';
               }
               done();
               return;
             }
             var candidates = parseWithdrawalCandidatesFromOcrText(text);
             renderOcrWithdrawalSummary(p, candidates, file.name);
+            if (ratioReminderHtml && p.refs.autofillSummaryEl) {
+              p.refs.autofillSummaryEl.innerHTML = ratioReminderHtml + p.refs.autofillSummaryEl.innerHTML;
+            }
             done();
           });
         };
@@ -1639,14 +1652,19 @@
     }).catch(function (e) { callback(e, null); });
   }
 
-  // OCR 결과 텍스트에서 "날짜"와 그 뒤에 나오는 "금액"이 같은 줄에 있으면 인출 이력
-  // 후보 하나로 본다(인출 이력 표는 보통 한 줄에 한 건씩 나오므로).
+  // OCR 결과 텍스트에서 "날짜"가 있는 줄을 찾아 인출 이력 후보로 본다. 회사 시스템의
+  // "적립금 입출금 이력" 같은 표는 한 줄에 [발생일자, 전기말적립금(그 시점 잔액),
+  // 부담금, 상품변경투입, 고유대기타유입액, 퇴직지급, 기타지급, 상품변경인출,
+  // 고유대기타유출액, 운용관리수수료, 자산관리수수료, 중도해지페널티, ...]처럼
+  // 여러 숫자 열이 나란히 있어서, 날짜 바로 다음 숫자(=그 시점 잔액)를 인출금액으로
+  // 잘못 집어올 위험이 크다. 그래서 날짜 다음 첫 숫자(잔액으로 간주)는 후보에서
+  // 제외하고, 그 뒤에 나오는 0이 아닌 숫자들을 전부 후보로 남겨서 RM이 실제 화면을
+  // 보고 어느 게 진짜 인출금액(퇴직지급/기타지급 등)인지 직접 골라 추가하게 한다.
   function parseWithdrawalCandidatesFromOcrText(text) {
     var lines = text.split("\n");
     var dateRe = /(\d{4})\s*[.\-/년]\s*(\d{1,2})\s*[.\-/월]\s*(\d{1,2})/;
-    var amountRe = /\d{1,3}(?:,\d{3})+|\d{5,}/;
+    var numRe = /\d{1,3}(?:,\d{3})+|\d{4,}/g;
     var candidates = [];
-    var seen = {};
     lines.forEach(function (line) {
       var dm = dateRe.exec(line);
       if (!dm) return;
@@ -1655,15 +1673,25 @@
       var dateStr = dm[1] + "." + ("0" + mo).slice(-2) + "." + ("0" + d).slice(-2);
 
       var rest = line.slice(dm.index + dm[0].length);
-      var am = amountRe.exec(rest);
-      if (!am) return;
-      var amountNum = parseInt(am[0].replace(/,/g, ""), 10);
-      if (!amountNum || amountNum <= 0) return;
+      var nums = [];
+      var nm;
+      numRe.lastIndex = 0;
+      while ((nm = numRe.exec(rest))) {
+        var v = parseInt(nm[0].replace(/,/g, ""), 10);
+        if (!isNaN(v)) nums.push(v);
+      }
+      if (nums.length < 2) return;
 
-      var key = dateStr + "|" + amountNum;
-      if (seen[key]) return;
-      seen[key] = true;
-      candidates.push({ date: dateStr, amount: amountNum, raw: line.trim() });
+      var amountCandidates = [];
+      var seen = {};
+      nums.slice(1).forEach(function (v) {
+        if (v > 0 && !seen[v]) {
+          seen[v] = true;
+          amountCandidates.push(v);
+        }
+      });
+      if (!amountCandidates.length) return;
+      candidates.push({ date: dateStr, amounts: amountCandidates, raw: line.trim() });
     });
     return candidates;
   }
@@ -1675,26 +1703,33 @@
       box.innerHTML = '<div class="autofill-note autofill-none">"' + escapeHtml(fileName) + '" 사진에서 인출 날짜/금액을 찾지 못했습니다. 직접 입력해주세요.</div>';
       return;
     }
-    var itemsHtml = candidates.map(function (c, i) {
-      return '<div class="flat-ratio-candidate">' +
-        '<p class="cell-note">' + escapeHtml(c.date) + ' / ' + formatWon(c.amount) + '</p>' +
-        '<button type="button" class="btn small ocr-withdrawal-add-btn" data-idx="' + i + '">인출 이력에 추가</button>' +
+    var groupsHtml = candidates.map(function (cand, gi) {
+      var btnsHtml = cand.amounts.map(function (amt, ai) {
+        return '<button type="button" class="btn small ocr-withdrawal-add-btn" data-gi="' + gi + '" data-ai="' + ai + '">' + formatWon(amt) + '</button>';
+      }).join("");
+      return '<div class="ocr-date-group">' +
+        '<p class="cell-note"><strong>' + escapeHtml(cand.date) + '</strong> — 이 줄에서 찾은 숫자 중 실제 인출금액(퇴직지급/기타지급 등)에 해당하는 걸 눌러 추가하세요.</p>' +
+        '<div class="ocr-amount-btn-row">' + btnsHtml + '</div>' +
       '</div>';
     }).join("");
     box.innerHTML =
       '<div class="autofill-note pdf-found">' +
-        '<p><strong>"' + escapeHtml(fileName) + '" 사진에서 인출 이력 후보 ' + candidates.length + '건을 찾았습니다(사진 인식이라 틀릴 수 있어요).</strong> 맞으면 "인출 이력에 추가"를 눌러주세요. 틀렸으면 무시하고 아래에 직접 입력하세요.</p>' +
-        itemsHtml +
+        '<p><strong>"' + escapeHtml(fileName) + '" 사진에서 인출 이력으로 보이는 날짜 ' + candidates.length + '건을 찾았습니다(사진 인식이라 틀릴 수 있어요).</strong> ' +
+        '표에 잔액·부담금·수수료 등 다른 숫자도 같이 있을 수 있어 자동으로 하나를 고르지 않았습니다. ' +
+        '실제 화면과 비교해서 맞는 금액 버튼을 눌러 추가해주세요(전기말적립금=잔액은 후보에서 제외했습니다).</p>' +
+        groupsHtml +
       '</div>';
     box.querySelectorAll(".ocr-withdrawal-add-btn").forEach(function (btn) {
       btn.addEventListener("click", function () {
-        var idx = parseInt(btn.getAttribute("data-idx"), 10);
-        var c = candidates[idx];
-        p.withdrawals.push({ id: state.nextId++, date: c.date, amount: Math.round(c.amount).toLocaleString("ko-KR") });
+        var gi = parseInt(btn.getAttribute("data-gi"), 10);
+        var ai = parseInt(btn.getAttribute("data-ai"), 10);
+        var cand = candidates[gi];
+        var amt = cand.amounts[ai];
+        p.withdrawals.push({ id: state.nextId++, date: cand.date, amount: Math.round(amt).toLocaleString("ko-KR") });
         renderProductWithdrawalRows(p);
         renderReport();
         btn.disabled = true;
-        btn.textContent = "추가됨";
+        btn.textContent = "추가됨: " + formatWon(amt);
       });
     });
   }
