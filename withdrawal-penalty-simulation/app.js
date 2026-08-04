@@ -1259,8 +1259,11 @@
       }
       return;
     }
+    // PDF 한 개에 상품이 여러 개 실려 있으면, 어느 스니펫이 어느 상품 소속인지
+    // 먼저 표시해서 서로 다른 상품의 조항이 뒤섞여 보이지 않게 한다.
     var snippetsHtml = snippets.map(function (s) {
-      return '<pre class="pdf-snippet">' + escapeHtml(s) + '</pre>';
+      return (s.productName ? '<p class="cell-note"><strong>[' + escapeHtml(s.productName) + ']</strong></p>' : '<p class="cell-note">[공통 안내]</p>') +
+        '<pre class="pdf-snippet">' + escapeHtml(s.text) + '</pre>';
     }).join("");
     box.innerHTML = tierHtml +
       '<div class="autofill-note pdf-found">' +
@@ -1308,9 +1311,26 @@
     return lines.filter(function (l) { return l !== ""; });
   }
 
+  // 줄 배열을 훑으면서 "상품명 ..." 줄을 만날 때마다 그 이후 줄들이 어느 상품 설명인지
+  // 기록한다. PDF 한 개에 상품(또는 "OO(디폴트옵션)"처럼 별개 취급해야 하는 변형) 여러
+  // 개가 함께 실려 있을 때, 특정 줄이 어느 상품 소속인지 판단하는 데 공통으로 쓴다.
+  function buildLineProductNames(lines) {
+    var names = new Array(lines.length);
+    var current = null;
+    lines.forEach(function (line, idx) {
+      var pm = /^상품명\s*(.+)/.exec(line.trim());
+      if (pm) current = pm[1].trim();
+      names[idx] = current;
+    });
+    return names;
+  }
+
   // 키워드가 있는 줄을 찾아 그 앞뒤 줄을 붙여서(표는 보통 여러 줄에 걸쳐 있으므로)
-  // 스니펫으로 만든다. 가까이 있는 매칭들은 하나로 합친다.
+  // 스니펫으로 만든다. 가까이 있는 매칭들은 하나로 합친다. PDF 한 개에 상품이 여러 개
+  // 실려 있으면(예: 기본형 vs 디폴트옵션) 각 스니펫이 어느 상품 소속인지도 같이
+  // 표시해서, 서로 다른 상품의 조항이 뒤섞여 보이지 않고 분리해서 확인할 수 있게 한다.
   function findPenaltyClauseSnippets(lines) {
+    var lineProductNames = buildLineProductNames(lines);
     var matchedIdx = [];
     lines.forEach(function (line, idx) {
       if (PDF_PENALTY_KEYWORDS.some(function (kw) { return line.indexOf(kw) !== -1; })) {
@@ -1319,21 +1339,29 @@
     });
     if (!matchedIdx.length) return [];
 
+    // 창(윈도) 앞뒤로 늘릴 때, 같은 상품 소속인 줄까지만 늘린다 — 그래야 창이 다른
+    // 상품 구간까지 넘어가서 스니펫 하나에 두 상품 내용이 섞이는 걸 막을 수 있다.
     var windows = matchedIdx.map(function (idx) {
-      return { start: Math.max(0, idx - 2), end: Math.min(lines.length - 1, idx + 8) };
+      var pname = lineProductNames[idx];
+      var start = idx;
+      while (start > 0 && start > idx - 2 && lineProductNames[start - 1] === pname) start--;
+      var end = idx;
+      var maxEnd = Math.min(lines.length - 1, idx + 8);
+      while (end < maxEnd && lineProductNames[end + 1] === pname) end++;
+      return { start: start, end: end, productName: pname };
     });
     var merged = [];
     windows.forEach(function (w) {
       var last = merged[merged.length - 1];
-      if (last && w.start <= last.end + 1) {
+      if (last && w.start <= last.end + 1 && w.productName === last.productName) {
         last.end = Math.max(last.end, w.end);
       } else {
-        merged.push({ start: w.start, end: w.end });
+        merged.push({ start: w.start, end: w.end, productName: w.productName });
       }
     });
 
-    return merged.slice(0, 3).map(function (w) {
-      return lines.slice(w.start, w.end + 1).join("\n");
+    return merged.slice(0, 4).map(function (w) {
+      return { text: lines.slice(w.start, w.end + 1).join("\n"), productName: w.productName };
     });
   }
 
@@ -1380,23 +1408,20 @@
   // (자동 적용은 비율이 문서 전체에서 하나로만 정해질 때만 한다).
   function parseFlatPenaltyRatios(lines) {
     var re = /(적용이율|약정이율|계약이율|만기이율)\s*의\s*(\d+(?:\.\d+)?)\s*%/;
-    var currentProductName = null;
+    var lineProductNames = buildLineProductNames(lines);
     var results = [];
     var seen = {};
-    lines.forEach(function (line) {
+    lines.forEach(function (line, idx) {
       var trimmed = line.trim();
-      var pm = /^상품명\s*(.+)/.exec(trimmed);
-      if (pm) {
-        currentProductName = pm[1].trim();
-        return;
-      }
+      if (/^상품명\s*(.+)/.test(trimmed)) return;
       var m = re.exec(trimmed);
       if (!m) return;
       var pct = parseFloat(m[2]);
-      var key = pct + "|" + (currentProductName || "");
+      var productName = lineProductNames[idx];
+      var key = pct + "|" + (productName || "");
       if (seen[key]) return;
       seen[key] = true;
-      results.push({ pct: pct, raw: trimmed, productName: currentProductName });
+      results.push({ pct: pct, raw: trimmed, productName: productName });
     });
     return results;
   }
@@ -1957,7 +1982,10 @@
             html += '<pre class="pdf-snippet">' + escapeHtml(a.flatRatios.map(function (r2) { return (r2.productName ? '[' + r2.productName + '] ' : '') + r2.raw; }).join("\n")) + '</pre>';
           }
           a.snippets.forEach(function (s) {
-            html += '<pre class="pdf-snippet">' + escapeHtml(s) + '</pre>';
+            html += s.productName
+              ? '<p class="cell-note"><strong>[' + escapeHtml(s.productName) + ']</strong></p>'
+              : '<p class="cell-note">[공통 안내]</p>';
+            html += '<pre class="pdf-snippet">' + escapeHtml(s.text) + '</pre>';
           });
         } else {
           html += '<img class="attachment-print-image" src="' + a.dataUrl + '" alt="해지패널티 계산 자료" />';

@@ -689,8 +689,8 @@ footer {
   --badge-better-bg: #e3f6e3;
   --badge-worse-bg: #fbe6e6;
   --badge-hold-bg: #e3ecfb;
-  background: #ffffff;
-  color: #131b2b;
+  background: #ffffff !important;
+  color: #131b2b !important;
 }
 
 .report-banner {
@@ -1161,25 +1161,47 @@ footer {
 }
 
 @media print {
+  /* 기기가 다크모드거나 이 앱에서 다크 테마를 켜 놓은 상태(:root[data-theme="dark"])면,
+     그 선택자가 속성선택자(specificity가 더 높음)라서 이 블록의 평범한 :root 보다
+     우선순위가 높아 인쇄 시에도 다크 배경이 그대로 남는 문제가 있었다(카드 배경이
+     검게 나와 글자가 거의 안 보임). !important로 우선순위를 강제로 이겨서, 인쇄/PDF는
+     기기 설정과 무관하게 항상 밝은 배경 + 어두운 글자로 고정한다. */
   :root {
-    --navy-900: #0b1f3d;
-    --navy-700: #123a72;
-    --primary: #1c5cab;
-    --gold: #b8892b;
-    --gold-strong: #96701e;
-    --gold-soft: #f5ead0;
-    --bg: #ffffff;
-    --card-bg: #ffffff;
-    --tile-bg: #f7f9fc;
-    --text: #131b2b;
-    --text-muted: #5c6576;
-    --border: #d8dae0;
-    --table-header-bg: #f5f7fb;
-    --badge-better-bg: #e3f6e3;
-    --badge-worse-bg: #fbe6e6;
-    --badge-hold-bg: #e3ecfb;
-    --success: #0ca30c;
-    --danger: #d03b3b;
+    --navy-900: #0b1f3d !important;
+    --navy-700: #123a72 !important;
+    --primary: #1c5cab !important;
+    --primary-dark: #104281 !important;
+    --gold: #b8892b !important;
+    --gold-strong: #96701e !important;
+    --gold-soft: #f5ead0 !important;
+    --bg: #ffffff !important;
+    --card-bg: #ffffff !important;
+    --input-bg: #ffffff !important;
+    --btn-bg: #eef1f6 !important;
+    --tile-bg: #f7f9fc !important;
+    --text: #131b2b !important;
+    --text-muted: #5c6576 !important;
+    --border: #d8dae0 !important;
+    --table-header-bg: #f5f7fb !important;
+    --badge-better-bg: #e3f6e3 !important;
+    --badge-worse-bg: #fbe6e6 !important;
+    --badge-hold-bg: #e3ecfb !important;
+    --success: #0ca30c !important;
+    --danger: #d03b3b !important;
+  }
+
+  body,
+  .card,
+  .report-block,
+  .kpi-tile,
+  .compare-bars,
+  .compare-row,
+  .conclusion-item,
+  .report-table,
+  .report-table th,
+  .report-table td {
+    background: #ffffff !important;
+    color: #131b2b !important;
   }
 
   * {
