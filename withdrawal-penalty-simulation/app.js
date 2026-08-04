@@ -1247,7 +1247,7 @@
       var candidatesHtml = flatRatios.map(function (r, i) {
         return '<div class="flat-ratio-candidate">' +
           '<p class="cell-note">' + (r.productName ? '[' + escapeHtml(r.productName) + '] ' : '') + escapeHtml(r.raw) + '</p>' +
-          '<button type="button" class="btn small flat-ratio-pick-btn" data-pct="' + r.pct + '" data-idx="' + i + '">이 비율(' + r.pct + '%) 사용</button>' +
+          '<button type="button" class="btn small flat-ratio-pick-btn" data-pct="' + r.pct + '" data-idx="' + i + '" data-product-name="' + escapeAttr(r.productName || "") + '">이 비율(' + r.pct + '%) 사용</button>' +
         '</div>';
       }).join("");
       tierHtml =
@@ -1287,6 +1287,26 @@
     box.querySelectorAll(".flat-ratio-pick-btn").forEach(function (btn) {
       btn.addEventListener("click", function () {
         var pct = btn.getAttribute("data-pct");
+        var candidateProductName = btn.getAttribute("data-product-name") || "";
+
+        // 이 버튼은 PDF를 첨부한 "이 카드"에 비율을 채우는데, PDF에 적힌 상품명과
+        // 이 카드의 상품명이 서로 전혀 안 겹치면(예: PDF는 삼성화재 상품인데
+        // 이 카드는 삼성생명 상품인 경우) 잘못된 카드에 적용하는 것일 수 있으니
+        // 되묻는다. 카드 상품명이 비어있거나 후보에 상품명이 없으면(비교 대상이
+        // 없으니) 그냥 진행한다.
+        var cardLabelNorm = normalizeLabelText(p.refs.labelInput.value);
+        var candidateNorm = normalizeLabelText(candidateProductName);
+        if (cardLabelNorm && candidateNorm) {
+          var overlaps = cardLabelNorm.indexOf(candidateNorm) !== -1 || candidateNorm.indexOf(cardLabelNorm) !== -1;
+          if (!overlaps) {
+            var ok = confirm(
+              '이 카드의 상품명은 "' + p.refs.labelInput.value + '"인데, 선택한 ' + pct + '%는 상품설명서의 "' + candidateProductName + '"에서 찾은 값입니다.\n' +
+              '서로 다른 상품일 수 있으니 한 번 더 확인해주세요. 그래도 이 카드에 적용할까요?'
+            );
+            if (!ok) return;
+          }
+        }
+
         p.refs.penaltyModeRatio.checked = true;
         updateProductPenaltyModeUI(p);
         p.refs.appliedRatePctInput.value = pct;
