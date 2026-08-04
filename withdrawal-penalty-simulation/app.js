@@ -2348,9 +2348,22 @@
       var halfPct = Math.min(50, Math.abs(rr.diff) / maxAbs * 50);
       var guideNote = "";
       if (rr.gapYears > 0.05 && rr.requiredReinvestRate !== null) {
+        // 만기가 늦은 쪽이 바뀌면(신상품이 늦거나 빠르거나) "누가 재예치 쪽인지"도
+        // 함께 바뀌어서, 부호(+/-)만으로는 어느 쪽이 유리한지 직관적으로 읽기 어렵다.
+        // 필요금리가 0 이하로 나오면(=먼저 만기되는 쪽이 이미 앞서 있음) 그 사실을
+        // "OO이 이미 더 유리"처럼 문장으로 바로 알려준다.
+        var aheadAlready = rr.requiredReinvestRate <= 0;
         guideNote = rr.horizonDiffYears > 0
-          ? '<div class="compare-guide">이 상품 만기는 ' + formatDateUTC(rr.ownMaturityDate) + '로 기존상품 만기(' + formatDateUTC(c.maturity) + ')보다 ' + formatYears(rr.gapYears) + ' 늦습니다 — 기존상품을 만기까지 유지한 뒤 그 이후 ' + formatYears(rr.gapYears) + '간 최소 <strong>' + formatPct(rr.requiredReinvestRate) + '(연단리 기준)</strong> 이상 재예치해야 이 상품과 동등해집니다.</div>'
-          : '<div class="compare-guide">이 상품 만기는 ' + formatDateUTC(rr.ownMaturityDate) + '로 기존상품 만기(' + formatDateUTC(c.maturity) + ')보다 ' + formatYears(rr.gapYears) + ' 빠릅니다 — 이 상품 만기 이후 ' + formatYears(rr.gapYears) + '간 최소 <strong>' + formatPct(rr.requiredReinvestRate) + '(연단리 기준)</strong> 이상 재예치해야 기존상품 유지와 동등해집니다.</div>';
+          ? ('<div class="compare-guide">이 상품 만기는 ' + formatDateUTC(rr.ownMaturityDate) + '로 기존상품 만기(' + formatDateUTC(c.maturity) + ')보다 ' + formatYears(rr.gapYears) + ' 늦습니다 — ' +
+              (aheadAlready
+                ? '기존상품을 만기까지 유지하기만 해도 이미 이 상품의 자체 만기 시점 금액을 넘어서 있어(그 뒤 ' + formatYears(rr.gapYears) + '을 마이너스로 재예치해도 동등), <strong>기존상품 유지가 이미 더 유리</strong>합니다.'
+                : '기존상품을 만기까지 유지한 뒤 그 이후 ' + formatYears(rr.gapYears) + '간 최소 <strong>' + formatPct(rr.requiredReinvestRate) + '(연단리 기준)</strong> 이상 재예치해야 이 상품과 동등해집니다.') +
+            '</div>')
+          : ('<div class="compare-guide">이 상품 만기는 ' + formatDateUTC(rr.ownMaturityDate) + '로 기존상품 만기(' + formatDateUTC(c.maturity) + ')보다 ' + formatYears(rr.gapYears) + ' 빠릅니다 — ' +
+              (aheadAlready
+                ? '이 상품이 자체 만기 시점에 이미 기존상품을 만기까지 유지한 금액을 넘어서 있어(그 뒤 ' + formatYears(rr.gapYears) + '을 마이너스로 재예치해도 동등), <strong>이 상품이 이미 더 유리</strong>합니다.'
+                : '이 상품 만기 이후 ' + formatYears(rr.gapYears) + '간 최소 <strong>' + formatPct(rr.requiredReinvestRate) + '(연단리 기준)</strong> 이상 재예치해야 기존상품 유지와 동등해집니다.') +
+            '</div>');
       }
       html += '<div class="compare-row' + (isBest ? " compare-best" : "") + '">' +
         '<div class="compare-label">' +
