@@ -473,7 +473,7 @@
 
       var dateInput = wrap.querySelector('[data-field="date"]');
       var amountInput = wrap.querySelector('[data-field="amount"]');
-      bindDateMask(dateInput, null);
+      bindDateMask(dateInput, amountInput);
       bindAmountMask(amountInput);
 
       wrap.querySelectorAll("input").forEach(function (input) {
