@@ -597,10 +597,25 @@
       refs.attachmentFileInput.value = "";
       if (!files.length) return;
 
-      // 명세엑셀 + 해지패널티엑셀 + 상품설명서 PDF처럼 여러 파일을 한 번에 선택해도
-      // 순서대로 하나씩 처리한다 — 카드 병합 로직이 "이 카드에 이미 어떤 상품이
-      // 들어있는지"를 참고하므로, 동시에 처리하면 서로의 결과를 못 보고 카드가
-      // 중복 생성될 수 있다.
+      // 명세엑셀 + 해지패널티엑셀 + 상품설명서 PDF + 사진처럼 여러 파일을 한 번에
+      // 선택해도 순서대로 하나씩 처리한다 — 카드 병합 로직이 "이 카드에 이미 어떤
+      // 상품이 들어있는지"를 참고하므로, 동시에 처리하면 서로의 결과를 못 보고
+      // 카드가 중복 생성될 수 있다. 처리 순서도 중요하다: 상품설명서(PDF)는
+      // 상품명이 이미 카드에 채워져 있어야 어느 카드에 적용할지 매칭할 수 있는데,
+      // 파일 선택 창에서 고른 순서가 항상 "엑셀 먼저"라는 보장이 없다(운영체제/선택
+      // 방식에 따라 뒤바뀔 수 있음). 그래서 실제 선택 순서와 무관하게 항상
+      // 엑셀/CSV(상품명 등을 채움) → PDF(그 상품명을 보고 매칭) → 이미지 순으로
+      // 정렬해서 처리한다.
+      var typeOrder = { xlsx: 0, xls: 0, csv: 0, pdf: 1 };
+      files.sort(function (a, b) {
+        function rank(f) {
+          if (/^image\//.test(f.type)) return 2;
+          var ext = (/\.([^.]+)$/.exec(f.name) || [])[1];
+          return typeOrder.hasOwnProperty(ext && ext.toLowerCase()) ? typeOrder[ext.toLowerCase()] : 1;
+        }
+        return rank(a) - rank(b);
+      });
+
       var fileQueueIdx = 0;
       function processNextQueuedFile() {
         if (fileQueueIdx >= files.length) return;
@@ -1505,16 +1520,31 @@
     return unit === "년" ? n * 12 : n;
   }
 
-  // 카드 상품명과 PDF에서 찾은 상품명이 같은 상품을 가리키는지 본다. 완전히 같으면
-  // 항상 일치로 보고, exactOnly가 아니면 서로 포함 관계(한쪽이 다른 쪽 안에 그대로
-  // 들어있는 경우 — 예: "OO보험" vs "OO보험(디폴트옵션)")도 일치로 본다.
+  // 상품명 끝에 흔히 붙는 "보험" 같은 일반 단어나 "3년"/"2.5년" 같은 기간 표시를
+  // 떼고 핵심명(회사명+상품종류)만 남긴다. 예: "삼성화재 이율보증형 3년" →
+  // "삼성화재이율보증형", "삼성화재 이율보증형보험" → "삼성화재이율보증형" — 실제
+  // 회사 시스템은 상품명에 기간을 붙여 관리하고, 상품설명서 PDF는 기간 대신
+  // "보험"으로 끝나는 정식 명칭을 쓰는 경우가 많아 이 둘을 이어주기 위한 것이다.
+  // "(디폴트옵션)"처럼 상품을 구분짓는 진짜 중요한 접미사는 이 규칙에 안 걸려서
+  // (끝이 "보험"도 "N년"도 아니므로) 그대로 남아 서로 다른 상품으로 유지된다.
+  function normalizeProductStem(norm) {
+    return norm.replace(/\d+(\.\d+)?년$/, "").replace(/보험$/, "");
+  }
+
+  // 카드 상품명과 PDF에서 찾은 상품명이 같은 상품을 가리키는지 본다. 다음 순서로
+  // 느슨하게 확인한다: 1) 완전히 같음, 2) exactOnly가 아니면 서로 포함 관계(한쪽이
+  // 다른 쪽 안에 그대로 들어있는 경우 — 예: "OO보험" vs "OO보험(디폴트옵션)"),
+  // 3) 위 핵심명(접미사 뗀 이름)이 같음(예: "OO 3년" vs "OO보험").
   function labelMatchesCandidateName(cardLabel, candidateName, exactOnly) {
     var a = normalizeLabelText(cardLabel);
     var b = normalizeLabelText(candidateName);
     if (!a || !b) return false;
     if (a === b) return true;
     if (exactOnly) return false;
-    return b.indexOf(a) !== -1 || a.indexOf(b) !== -1;
+    if (b.indexOf(a) !== -1 || a.indexOf(b) !== -1) return true;
+    var sa = normalizeProductStem(a);
+    var sb = normalizeProductStem(b);
+    return !!sa && !!sb && sa === sb;
   }
 
   // 상품(또는 옵션)이 여러 개 실린 PDF에서, 이 카드의 상품명과 유일하게 일치하는 후보
