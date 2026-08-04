@@ -1599,11 +1599,32 @@
     var t = c.remainingYearsClamped === null ? 0 : c.remainingYearsClamped;
     var results = {};
 
+    // "오늘(해지기준일)"과 만기 사이에 예정된 인출 이력이 있으면(예: 앞으로 얼마를
+    // 더 인출할 예정이라 미리 계산해보는 경우), 그 시점에서 빼고 나머지 구간만
+    // 굴려야 만기 예상 수령액에 제대로 반영된다 — 오늘 이전 인출은 computeHistory가
+    // balanceToday에 이미 반영해 준다.
+    var futureEvents = events.filter(function (e) {
+      return c.today && c.maturity && e.date.getTime() > c.today.getTime() && e.date.getTime() <= c.maturity.getTime();
+    }).sort(function (a, b) { return a.date.getTime() - b.date.getTime(); });
+
     ["simple", "compoundYear", "compoundMonth"].forEach(function (m) {
       var cForMethod = Object.assign({}, c, { method: m });
       var hForMethod = computeHistory(cForMethod, events);
       var base = hForMethod ? hForMethod.balanceToday : c.principal;
-      results[m] = base * growthFactor(m, c.rate / 100, t);
+
+      if (futureEvents.length && c.today && c.maturity) {
+        var amount = base;
+        var segStart = c.today;
+        futureEvents.forEach(function (e) {
+          var segYears = Math.max(0, yearsBetween(segStart, e.date) || 0);
+          amount = Math.max(0, amount * growthFactor(m, c.rate / 100, segYears) - e.amount);
+          segStart = e.date;
+        });
+        var lastYears = Math.max(0, yearsBetween(segStart, c.maturity) || 0);
+        results[m] = amount * growthFactor(m, c.rate / 100, lastYears);
+      } else {
+        results[m] = base * growthFactor(m, c.rate / 100, t);
+      }
     });
 
     refs.suggestSimpleEl.textContent = formatWon(results.simple);
