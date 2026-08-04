@@ -1898,25 +1898,43 @@
 
     if (mode === "direct") {
       var rawCancelAmount = parseAmountStr(refs.directCancelAmountInput.value);
-      cancelAmount = rawCancelAmount;
       penaltyAmount = parseAmountStr(refs.directPenaltyAmountInput.value);
 
-      // 입력한 해지적립금은 보통 회사 시스템에서 "실제 오늘" 기준으로 조회한 값이다.
+      var todayReal = todayLocalDate();
+      var allEvents = (history && history.events) ? history.events : [];
+
+      // 입력한 해지적립금은 회사 시스템에서 조회한 시점(대개 실제 오늘) 기준 값이므로,
+      // 그 시점 이전에 실제로 이미 벌어진 인출은 조회값에 이미 반영돼 있다고 보고 다시
+      // 빼지 않는다 — 다만 화면에 안내한 대로("명세일자 이후 실제 인출된 금액이 있으면
+      // 추가하세요. 있으면 중도해지 시 계산에도 자동 반영됩니다") 실제 오늘 이전 인출
+      // 이력을 입력했는데도 전혀 반영이 안 되는 문제가 있었다 — 조회 시점을 정확히
+      // 알 수 없으므로, "실제 오늘"을 기준으로 그 이전 인출은 그대로 빼서 반영한다.
+      var pastEvents = allEvents.filter(function (e) { return e.date.getTime() <= todayReal.getTime(); });
+      var pastWithdrawn = pastEvents.reduce(function (s, e) { return s + e.amount; }, 0);
+      cancelAmount = rawCancelAmount === null ? null : Math.max(0, rawCancelAmount - pastWithdrawn);
+
+      if (pastEvents.length && rawCancelAmount !== null) {
+        refs.directModeFutureNoteEl.textContent =
+          "입력하신 해지적립금 " + formatWon(rawCancelAmount) + "에서 인출 이력 " + pastEvents.length + "건(합계 " +
+          formatWon(pastWithdrawn) + ")을 뺀 " + formatWon(cancelAmount) + "을 사용합니다.";
+      } else {
+        refs.directModeFutureNoteEl.textContent = "";
+      }
+
       // 위 "오늘(해지기준일)"을 미래로 바꾼 경우, 그 값을 약정금리로 계속 굴렸다고
       // 가정한 추정치로 미래 시점 해지적립금을 보여준다(실제 회사 값과 다를 수 있음).
       // 이때 "실제 오늘"과 미래 해지기준일 사이에 인출 이력이 있으면(예: 조회 시점
-      // 이후에 예정된 인출), 그 시점에서 빼고 나머지 구간만 굴린다 — 조회 시점 이전
-      // 인출은 입력한 해지적립금 자체에 이미 반영돼 있다고 보고 다시 빼지 않는다.
-      var todayReal = todayLocalDate();
-      if (rawCancelAmount !== null && c.today && c.rate !== null &&
+      // 이후에 예정된 인출), 그 시점에서 빼고 나머지 구간만 굴린다. (실제 오늘 이전
+      // 인출은 위에서 이미 처리했으므로 여기서는 그 이후분만 다뤄 중복으로 빼지 않는다.)
+      if (cancelAmount !== null && c.today && c.rate !== null &&
           Math.abs(c.today.getTime() - todayReal.getTime()) > 12 * 3600 * 1000) {
         var gapYrs = yearsBetween(todayReal, c.today);
         if (gapYrs !== null) {
-          var futureEvents = (history && history.events ? history.events : [])
+          var futureEvents = allEvents
             .filter(function (e) { return e.date.getTime() > todayReal.getTime() && e.date.getTime() <= c.today.getTime(); })
             .sort(function (a, b) { return a.date.getTime() - b.date.getTime(); });
 
-          var estimated = rawCancelAmount;
+          var estimated = cancelAmount;
           var segStart = todayReal;
           futureEvents.forEach(function (e) {
             var segYears = Math.max(0, yearsBetween(segStart, e.date) || 0);
@@ -1932,13 +1950,11 @@
             : "";
           refs.directModeFutureNoteEl.textContent =
             (gapYrs >= 0
-              ? "오늘 날짜가 실제 오늘(" + formatDateUTC(todayReal) + ")보다 " + formatYears(gapYrs) + " 미래라, 입력하신 해지적립금 " + formatWon(rawCancelAmount) + "이 약정금리로 계속 늘었다고 가정한 추정치 " + formatWon(estimated) + "을 사용합니다."
-              : "오늘 날짜가 실제 오늘(" + formatDateUTC(todayReal) + ")보다 " + formatYears(-gapYrs) + " 과거라, 입력하신 해지적립금을 그만큼 거꾸로 할인한 추정치 " + formatWon(estimated) + "을 사용합니다.") +
+              ? "오늘 날짜가 실제 오늘(" + formatDateUTC(todayReal) + ")보다 " + formatYears(gapYrs) + " 미래라, 해지적립금이 약정금리로 계속 늘었다고 가정한 추정치 " + formatWon(estimated) + "을 사용합니다."
+              : "오늘 날짜가 실제 오늘(" + formatDateUTC(todayReal) + ")보다 " + formatYears(-gapYrs) + " 과거라, 해지적립금을 그만큼 거꾸로 할인한 추정치 " + formatWon(estimated) + "을 사용합니다.") +
             withdrawalNote +
             " 실제 회사 시스템 조회값과 다를 수 있으니 참고용으로만 사용하세요.";
         }
-      } else {
-        refs.directModeFutureNoteEl.textContent = "";
       }
     } else {
       var ratePct = parseFloat(refs.appliedRatePctInput.value);
