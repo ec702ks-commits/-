@@ -1652,14 +1652,14 @@
     }).catch(function (e) { callback(e, null); });
   }
 
-  // OCR 결과 텍스트에서 "날짜"가 있는 줄을 찾아 인출 이력 후보로 본다. 회사 시스템의
+  // OCR 결과 텍스트에서 "날짜"가 있는 줄을 찾아 인출 이력으로 본다. 회사 시스템의
   // "적립금 입출금 이력" 같은 표는 한 줄에 [발생일자, 전기말적립금(그 시점 잔액),
   // 부담금, 상품변경투입, 고유대기타유입액, 퇴직지급, 기타지급, 상품변경인출,
   // 고유대기타유출액, 운용관리수수료, 자산관리수수료, 중도해지페널티, ...]처럼
-  // 여러 숫자 열이 나란히 있어서, 날짜 바로 다음 숫자(=그 시점 잔액)를 인출금액으로
-  // 잘못 집어올 위험이 크다. 그래서 날짜 다음 첫 숫자(잔액으로 간주)는 후보에서
-  // 제외하고, 그 뒤에 나오는 0이 아닌 숫자들을 전부 후보로 남겨서 RM이 실제 화면을
-  // 보고 어느 게 진짜 인출금액(퇴직지급/기타지급 등)인지 직접 골라 추가하게 한다.
+  // 여러 숫자 열이 나란히 있다. 어느 열에서 나왔는지는 중요하지 않고 "그 날짜에
+  // 얼마가 빠져나갔는지"만 필요하므로, 날짜 다음 첫 숫자(=그 시점 잔액)만 제외하고
+  // 나머지 0이 아닌 숫자를 전부 더해 그 날짜의 인출금액으로 본다. 전부 0이면(그
+  // 날짜엔 인출이 없었다는 뜻) 후보에서 뺀다.
   function parseWithdrawalCandidatesFromOcrText(text) {
     var lines = text.split("\n");
     var dateRe = /(\d{4})\s*[.\-/년]\s*(\d{1,2})\s*[.\-/월]\s*(\d{1,2})/;
@@ -1682,56 +1682,36 @@
       }
       if (nums.length < 2) return;
 
-      var amountCandidates = [];
-      var seen = {};
-      nums.slice(1).forEach(function (v) {
-        if (v > 0 && !seen[v]) {
-          seen[v] = true;
-          amountCandidates.push(v);
-        }
-      });
-      if (!amountCandidates.length) return;
-      candidates.push({ date: dateStr, amounts: amountCandidates, raw: line.trim() });
+      var total = nums.slice(1).reduce(function (s, v) { return s + v; }, 0);
+      if (total <= 0) return;
+      candidates.push({ date: dateStr, amount: total, raw: line.trim() });
     });
     return candidates;
   }
 
+  // 찾은 인출 후보를 곧바로 인출 이력에 반영한다(어느 열에서 나왔는지 구분해서
+  // 되묻지 않고, 그 날짜에 인출이 있었는지와 총액만 반영).
   function renderOcrWithdrawalSummary(p, candidates, fileName) {
     var box = p.refs.autofillSummaryEl;
     if (!box) return;
     if (!candidates.length) {
-      box.innerHTML = '<div class="autofill-note autofill-none">"' + escapeHtml(fileName) + '" 사진에서 인출 날짜/금액을 찾지 못했습니다. 직접 입력해주세요.</div>';
+      box.innerHTML = '<div class="autofill-note autofill-none">"' + escapeHtml(fileName) + '" 사진에서 인출 이력을 찾지 못했습니다. 직접 입력해주세요.</div>';
       return;
     }
-    var groupsHtml = candidates.map(function (cand, gi) {
-      var btnsHtml = cand.amounts.map(function (amt, ai) {
-        return '<button type="button" class="btn small ocr-withdrawal-add-btn" data-gi="' + gi + '" data-ai="' + ai + '">' + formatWon(amt) + '</button>';
-      }).join("");
-      return '<div class="ocr-date-group">' +
-        '<p class="cell-note"><strong>' + escapeHtml(cand.date) + '</strong> — 이 줄에서 찾은 숫자 중 실제 인출금액(퇴직지급/기타지급 등)에 해당하는 걸 눌러 추가하세요.</p>' +
-        '<div class="ocr-amount-btn-row">' + btnsHtml + '</div>' +
-      '</div>';
+    candidates.forEach(function (cand) {
+      p.withdrawals.push({ id: state.nextId++, date: cand.date, amount: Math.round(cand.amount).toLocaleString("ko-KR") });
+    });
+    renderProductWithdrawalRows(p);
+    renderReport();
+
+    var itemsHtml = candidates.map(function (cand) {
+      return "<li>" + escapeHtml(cand.date) + " / " + formatWon(cand.amount) + "</li>";
     }).join("");
     box.innerHTML =
-      '<div class="autofill-note pdf-found">' +
-        '<p><strong>"' + escapeHtml(fileName) + '" 사진에서 인출 이력으로 보이는 날짜 ' + candidates.length + '건을 찾았습니다(사진 인식이라 틀릴 수 있어요).</strong> ' +
-        '표에 잔액·부담금·수수료 등 다른 숫자도 같이 있을 수 있어 자동으로 하나를 고르지 않았습니다. ' +
-        '실제 화면과 비교해서 맞는 금액 버튼을 눌러 추가해주세요(전기말적립금=잔액은 후보에서 제외했습니다).</p>' +
-        groupsHtml +
-      '</div>';
-    box.querySelectorAll(".ocr-withdrawal-add-btn").forEach(function (btn) {
-      btn.addEventListener("click", function () {
-        var gi = parseInt(btn.getAttribute("data-gi"), 10);
-        var ai = parseInt(btn.getAttribute("data-ai"), 10);
-        var cand = candidates[gi];
-        var amt = cand.amounts[ai];
-        p.withdrawals.push({ id: state.nextId++, date: cand.date, amount: Math.round(amt).toLocaleString("ko-KR") });
-        renderProductWithdrawalRows(p);
-        renderReport();
-        btn.disabled = true;
-        btn.textContent = "추가됨: " + formatWon(amt);
-      });
-    });
+      '<div class="autofill-note autofill-ok">' +
+        '<p><strong>"' + escapeHtml(fileName) + '" 사진에서 인출 이력 ' + candidates.length + '건을 자동으로 반영했습니다(사진 인식이라 틀릴 수 있어요).</strong> 아래 인출 이력에서 값을 확인하고, 필요하면 직접 수정하세요.</p>' +
+        "<ul>" + itemsHtml + "</ul>" +
+      "</div>";
   }
 
   // 첨부 자료 표에서 불필요한 개인정보 열은 빼고, 자주 길어지는 열은 넓게 표시한다.

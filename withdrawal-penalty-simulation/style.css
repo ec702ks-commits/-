@@ -644,27 +644,6 @@ input[type="file"] {
   flex-shrink: 0;
 }
 
-.ocr-date-group {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin: 6px 0 0;
-  padding: 8px 10px;
-  background: var(--card-bg);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-}
-
-.ocr-date-group .cell-note {
-  margin: 0;
-}
-
-.ocr-amount-btn-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
 .withdrawal-history {
   margin-top: 14px;
   padding-top: 14px;
