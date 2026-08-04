@@ -623,6 +623,27 @@ input[type="file"] {
   word-break: break-word;
 }
 
+.flat-ratio-candidate {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.flat-ratio-candidate .cell-note {
+  margin: 0;
+  flex: 1;
+}
+
+.flat-ratio-pick-btn {
+  flex-shrink: 0;
+}
+
 .withdrawal-history {
   margin-top: 14px;
   padding-top: 14px;

@@ -1244,10 +1244,16 @@
           '<p class="cell-note">자동으로 채운 값이니 아래 "적용이율 비율" 칸에서 다시 한 번 확인해주세요.</p>' +
         '</div>';
     } else if (flatRatios && flatRatios.length > 1) {
+      var candidatesHtml = flatRatios.map(function (r, i) {
+        return '<div class="flat-ratio-candidate">' +
+          '<p class="cell-note">' + (r.productName ? '[' + escapeHtml(r.productName) + '] ' : '') + escapeHtml(r.raw) + '</p>' +
+          '<button type="button" class="btn small flat-ratio-pick-btn" data-pct="' + r.pct + '" data-idx="' + i + '">이 비율(' + r.pct + '%) 사용</button>' +
+        '</div>';
+      }).join("");
       tierHtml =
         '<div class="autofill-note pdf-found">' +
-          '<p><strong>고정 중도해지비율 후보를 ' + flatRatios.length + '개 찾았지만, 상품(또는 옵션)이 여러 개라 자동으로 정하지 못했습니다.</strong> 아래에서 가입하신 상품에 맞는 비율을 확인하고 "적용이율 비율" 칸에 직접 입력해주세요.</p>' +
-          '<pre class="pdf-snippet">' + escapeHtml(flatRatios.map(function (r) { return (r.productName ? '[' + r.productName + '] ' : '') + r.raw; }).join("\n")) + '</pre>' +
+          '<p><strong>고정 중도해지비율 후보를 ' + flatRatios.length + '개 찾았지만, 상품(또는 옵션)이 여러 개라 자동으로 정하지 못했습니다.</strong> 가입하신 상품에 맞는 비율의 버튼을 눌러 바로 채우거나, 아래 "적용이율 비율" 칸에 직접 입력해주세요.</p>' +
+          candidatesHtml +
         '</div>';
     }
 
@@ -1257,6 +1263,7 @@
       } else {
         box.innerHTML = tierHtml;
       }
+      wireFlatRatioPickButtons(p, box);
       return;
     }
     // PDF 한 개에 상품이 여러 개 실려 있으면, 어느 스니펫이 어느 상품 소속인지
@@ -1270,6 +1277,22 @@
         '<p><strong>"' + escapeHtml(fileName) + '"에서 중도해지 관련 문구 ' + snippets.length + '건을 찾았습니다.</strong> 원문은 아래에서 확인하세요.</p>' +
         snippetsHtml +
       '</div>';
+    wireFlatRatioPickButtons(p, box);
+  }
+
+  // "고정 중도해지비율 후보" 목록에서 버튼을 눌러 바로 "적용이율 비율" 칸을 채울 수 있게 한다
+  // (상품(또는 옵션)이 여러 개라 자동으로 하나를 정하지 못했을 때, 숫자를 직접 타이핑하지
+  // 않고 후보 중 맞는 걸 한 번 클릭으로 반영하기 위한 용도).
+  function wireFlatRatioPickButtons(p, box) {
+    box.querySelectorAll(".flat-ratio-pick-btn").forEach(function (btn) {
+      btn.addEventListener("click", function () {
+        var pct = btn.getAttribute("data-pct");
+        p.refs.penaltyModeRatio.checked = true;
+        updateProductPenaltyModeUI(p);
+        p.refs.appliedRatePctInput.value = pct;
+        renderReport();
+      });
+    });
   }
 
   // ---------- 첨부 PDF(상품설명서)에서 중도해지 관련 문구 찾기 ----------
@@ -1607,17 +1630,37 @@
       // 입력한 해지적립금은 보통 회사 시스템에서 "실제 오늘" 기준으로 조회한 값이다.
       // 위 "오늘(해지기준일)"을 미래로 바꾼 경우, 그 값을 약정금리로 계속 굴렸다고
       // 가정한 추정치로 미래 시점 해지적립금을 보여준다(실제 회사 값과 다를 수 있음).
+      // 이때 "실제 오늘"과 미래 해지기준일 사이에 인출 이력이 있으면(예: 조회 시점
+      // 이후에 예정된 인출), 그 시점에서 빼고 나머지 구간만 굴린다 — 조회 시점 이전
+      // 인출은 입력한 해지적립금 자체에 이미 반영돼 있다고 보고 다시 빼지 않는다.
       var todayReal = todayLocalDate();
       if (rawCancelAmount !== null && c.today && c.rate !== null &&
           Math.abs(c.today.getTime() - todayReal.getTime()) > 12 * 3600 * 1000) {
         var gapYrs = yearsBetween(todayReal, c.today);
         if (gapYrs !== null) {
-          var estimated = rawCancelAmount * growthFactor(c.method, c.rate / 100, gapYrs);
+          var futureEvents = (history && history.events ? history.events : [])
+            .filter(function (e) { return e.date.getTime() > todayReal.getTime() && e.date.getTime() <= c.today.getTime(); })
+            .sort(function (a, b) { return a.date.getTime() - b.date.getTime(); });
+
+          var estimated = rawCancelAmount;
+          var segStart = todayReal;
+          futureEvents.forEach(function (e) {
+            var segYears = Math.max(0, yearsBetween(segStart, e.date) || 0);
+            estimated = Math.max(0, estimated * growthFactor(c.method, c.rate / 100, segYears) - e.amount);
+            segStart = e.date;
+          });
+          var lastYears = Math.max(0, yearsBetween(segStart, c.today) || 0);
+          estimated = estimated * growthFactor(c.method, c.rate / 100, lastYears);
+
           cancelAmount = estimated;
+          var withdrawalNote = futureEvents.length
+            ? " 그 사이 예정된 인출 " + futureEvents.length + "건(합계 " + formatWon(futureEvents.reduce(function (s, e) { return s + e.amount; }, 0)) + ")도 반영했습니다."
+            : "";
           refs.directModeFutureNoteEl.textContent =
             (gapYrs >= 0
               ? "오늘 날짜가 실제 오늘(" + formatDateUTC(todayReal) + ")보다 " + formatYears(gapYrs) + " 미래라, 입력하신 해지적립금 " + formatWon(rawCancelAmount) + "이 약정금리로 계속 늘었다고 가정한 추정치 " + formatWon(estimated) + "을 사용합니다."
               : "오늘 날짜가 실제 오늘(" + formatDateUTC(todayReal) + ")보다 " + formatYears(-gapYrs) + " 과거라, 입력하신 해지적립금을 그만큼 거꾸로 할인한 추정치 " + formatWon(estimated) + "을 사용합니다.") +
+            withdrawalNote +
             " 실제 회사 시스템 조회값과 다를 수 있으니 참고용으로만 사용하세요.";
         }
       } else {
@@ -2086,6 +2129,19 @@
 
     el.printBtn.addEventListener("click", function () {
       window.print();
+    });
+
+    // 일부 기기/브라우저의 "PDF로 저장" 인쇄 경로는 @media print를 제대로
+    // 적용하지 않고, 기기가 다크모드면 리포트 카드 배경까지 어둡게(거의
+    // 안 보이게) 그대로 인쇄해버리는 경우가 있다. CSS만으로는 이걸 확실히
+    // 못 이길 수 있어서, 인쇄가 시작되기 직전(beforeprint)에 화면 전체를
+    // 강제로 밝은 테마로 바꿔서(:root[data-theme="light"]) 인쇄한 뒤,
+    // 인쇄가 끝나면(afterprint) 원래 테마로 되돌린다.
+    window.addEventListener("beforeprint", function () {
+      document.documentElement.setAttribute("data-theme", "light");
+    });
+    window.addEventListener("afterprint", function () {
+      document.documentElement.removeAttribute("data-theme");
     });
 
     el.resetBtn.addEventListener("click", function () {
