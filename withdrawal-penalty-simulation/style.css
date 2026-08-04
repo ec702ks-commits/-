@@ -1303,8 +1303,10 @@ footer {
     page-break-after: avoid;
   }
 
-  /* 명세(기존상품)가 여러 건이면 각 명세를 새 페이지에서 시작한다(첫 번째는 제외). */
-  .product-report + .product-report {
+  /* 명세(기존상품)가 여러 건이면(.product-report-divided) 첫 번째 명세부터 포함해서
+     모두 새 페이지에서 시작한다 — 앞의 결론 요약/합계 페이지와 분리되게. 명세가
+     하나뿐이면(그 클래스가 안 붙음) 배너 바로 뒤에 이어서 보여준다. */
+  .product-report-divided {
     break-before: page;
     page-break-before: always;
   }
