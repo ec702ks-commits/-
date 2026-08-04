@@ -728,62 +728,89 @@
             done();
             return;
           }
-          var matchedTier = null;
-          var elapsedMonths = null;
-          if (result.breakpoints && result.breakpoints.length) {
-            var c = gatherProductCustomer(p);
-            if (c.elapsedYears !== null) {
+
+          // 상품설명서 PDF는 보통 단체 전체에 공통으로 쓰는 자료라, 이 카드 하나에만
+          // 적용하지 않고 화면에 있는 모든 상품카드를 훑어서 상품명이 (정확히 또는
+          // 유일하게) 일치하는 카드마다 자동으로 적용한다. 그래야 "삼성화재" 명세가
+          // 여러 건이어도 PDF를 한 번만 올리면 전부 반영된다. 안전을 위해, 카드가
+          // 여러 개와 겹치거나 상품명이 비어 있으면 그 카드는 건너뛰고 자동 적용하지 않는다.
+          var appliedResults = [];
+          state.products.forEach(function (prod) {
+            var c = gatherProductCustomer(prod);
+            var matchedTier = null;
+            var elapsedMonths = null;
+            if (result.breakpoints && result.breakpoints.length && c.elapsedYears !== null) {
               elapsedMonths = Math.max(0, c.elapsedYears) * 12;
-              matchedTier = matchPenaltyTier(result.breakpoints, elapsedMonths);
+              var hasTags = result.breakpoints.some(function (b) { return b.productName; });
+              var applicableBreakpoints = !hasTags ? result.breakpoints : result.breakpoints.filter(function (b) {
+                return !b.productName || labelMatchesCandidateName(prod.refs.labelInput.value, b.productName, true);
+              });
+              matchedTier = matchPenaltyTier(applicableBreakpoints, elapsedMonths);
             }
-          }
-          var matchedFlatRatio = null;
-          var flatMatchReason = null;
-          if (!matchedTier && result.flatRatios && result.flatRatios.length) {
-            var flatPcts = distinctFlatPcts(result.flatRatios);
-            if (flatPcts.length === 1) {
-              matchedFlatRatio = result.flatRatios[0];
-              flatMatchReason = "unique";
-            } else {
-              // 문서 하나에 상품(또는 옵션)이 여러 개라 비율도 여러 종류면, 이미 이 카드에
-              // 입력돼 있는 "상품명"과 PDF에서 찾은 상품명이 서로 포함 관계로 일치하는
-              // 후보가 정확히 하나일 때만 그걸로 자동 설정한다(상품명이 없거나 여러 개와
-              // 겹치면 애매하니 자동 적용하지 않고 후보만 보여준다).
-              var productLabelNorm = normalizeLabelText(refs.labelInput.value);
-              if (productLabelNorm) {
-                // 완전히 같은 이름이 있으면 그것을 우선(예: "OO보험" vs "OO보험(디폴트옵션)"처럼
-                // 기본형 이름이 변형 이름의 앞부분과 겹치는 경우, 포함 관계만 보면 둘 다
-                // 걸려서 오히려 더 애매해지므로 정확히 같은 이름을 먼저 찾는다).
-                var exactLabelMatches = result.flatRatios.filter(function (fr) {
-                  return fr.productName && normalizeLabelText(fr.productName) === productLabelNorm;
-                });
-                var labelMatches = exactLabelMatches.length ? exactLabelMatches : result.flatRatios.filter(function (fr) {
-                  if (!fr.productName) return false;
-                  return normalizeLabelText(fr.productName).indexOf(productLabelNorm) !== -1;
-                });
-                if (labelMatches.length === 1) {
-                  matchedFlatRatio = labelMatches[0];
+
+            var matchedFlatRatio = null;
+            var flatMatchReason = null;
+            if (!matchedTier && result.flatRatios && result.flatRatios.length) {
+              var flatPcts = distinctFlatPcts(result.flatRatios);
+              if (flatPcts.length === 1) {
+                matchedFlatRatio = result.flatRatios[0];
+                flatMatchReason = "unique";
+              } else {
+                var picked = pickUniqueCandidateForLabel(prod.refs.labelInput.value, result.flatRatios);
+                if (picked) {
+                  matchedFlatRatio = picked;
                   flatMatchReason = "label";
                 }
               }
             }
-          }
-          if (matchedTier) {
-            refs.penaltyModeRatio.checked = true;
-            updateProductPenaltyModeUI(p);
-            refs.appliedRatePctInput.value = matchedTier.pct;
-          } else if (matchedFlatRatio) {
-            refs.penaltyModeRatio.checked = true;
-            updateProductPenaltyModeUI(p);
-            refs.appliedRatePctInput.value = matchedFlatRatio.pct;
-          }
-          p.attachments.push({
-            id: state.nextId++, kind: "pdf", name: file.name, snippets: result.snippets,
-            pageCount: result.pageCount, breakpoints: result.breakpoints, matchedTier: matchedTier,
-            flatRatios: result.flatRatios, matchedFlatRatio: matchedFlatRatio, flatMatchReason: flatMatchReason
+
+            if (!matchedTier && !matchedFlatRatio) return;
+
+            prod.refs.penaltyModeRatio.checked = true;
+            updateProductPenaltyModeUI(prod);
+            prod.refs.appliedRatePctInput.value = matchedTier ? matchedTier.pct : matchedFlatRatio.pct;
+
+            prod.attachments.push({
+              id: state.nextId++, kind: "pdf", name: file.name,
+              snippets: prod === p ? result.snippets : [],
+              pageCount: result.pageCount, breakpoints: result.breakpoints, matchedTier: matchedTier,
+              flatRatios: result.flatRatios, matchedFlatRatio: matchedFlatRatio, flatMatchReason: flatMatchReason
+            });
+            renderProductAttachments(prod);
+            appliedResults.push({ product: prod, matchedTier: matchedTier, matchedFlatRatio: matchedFlatRatio, flatMatchReason: flatMatchReason, elapsedMonths: elapsedMonths });
           });
-          renderProductAttachments(p);
-          renderPdfSnippetsSummary(p, result, file.name, matchedTier, elapsedMonths, matchedFlatRatio, flatMatchReason);
+
+          var ownResult = appliedResults.filter(function (a) { return a.product === p; })[0];
+          if (!ownResult) {
+            // p 자신은 매칭되지 않았으면(상품명이 없거나 PDF 상품명과 안 맞으면), 첨부
+            // 자체는 기록해서 첨부 목록/원문 스니펫은 볼 수 있게 한다(매칭 안 됨 = 값 채움 없음).
+            p.attachments.push({
+              id: state.nextId++, kind: "pdf", name: file.name, snippets: result.snippets,
+              pageCount: result.pageCount, breakpoints: result.breakpoints, matchedTier: null,
+              flatRatios: result.flatRatios, matchedFlatRatio: null, flatMatchReason: null
+            });
+            renderProductAttachments(p);
+          }
+          renderPdfSnippetsSummary(p, result, file.name,
+            ownResult ? ownResult.matchedTier : null,
+            ownResult ? ownResult.elapsedMonths : null,
+            ownResult ? ownResult.matchedFlatRatio : null,
+            ownResult ? ownResult.flatMatchReason : null);
+
+          var otherApplied = appliedResults.filter(function (a) { return a.product !== p; });
+          if (otherApplied.length && p.refs.autofillSummaryEl) {
+            var otherListHtml = otherApplied.map(function (a) {
+              var pct = a.matchedTier ? a.matchedTier.pct : a.matchedFlatRatio.pct;
+              return "<li>" + escapeHtml(a.product.refs.labelInput.value || "(상품명 없음)") + " → " + pct + "%</li>";
+            }).join("");
+            var otherNoteHtml =
+              '<div class="autofill-note autofill-ok">' +
+                "<p><strong>같은 상품설명서를 상품명이 일치하는 다른 카드 " + otherApplied.length + "개에도 자동으로 적용했습니다:</strong></p>" +
+                "<ul>" + otherListHtml + "</ul>" +
+              "</div>";
+            p.refs.autofillSummaryEl.innerHTML = otherNoteHtml + p.refs.autofillSummaryEl.innerHTML;
+          }
+
           renderReport();
           done();
         });
@@ -1314,10 +1341,8 @@
         // 이 카드는 삼성생명 상품인 경우) 잘못된 카드에 적용하는 것일 수 있으니
         // 되묻는다. 카드 상품명이 비어있거나 후보에 상품명이 없으면(비교 대상이
         // 없으니) 그냥 진행한다.
-        var cardLabelNorm = normalizeLabelText(p.refs.labelInput.value);
-        var candidateNorm = normalizeLabelText(candidateProductName);
-        if (cardLabelNorm && candidateNorm) {
-          var overlaps = cardLabelNorm.indexOf(candidateNorm) !== -1 || candidateNorm.indexOf(cardLabelNorm) !== -1;
+        if (candidateProductName && normalizeLabelText(p.refs.labelInput.value)) {
+          var overlaps = labelMatchesCandidateName(p.refs.labelInput.value, candidateProductName, false);
           if (!overlaps) {
             var ok = confirm(
               '이 카드의 상품명은 "' + p.refs.labelInput.value + '"인데, 선택한 ' + pct + '%는 상품설명서의 "' + candidateProductName + '"에서 찾은 값입니다.\n' +
@@ -1434,28 +1459,30 @@
   // 못 찾을 수 있음 — 그 경우엔 스니펫만 보여주고 자동 설정은 하지 않는다).
   function parsePenaltyRateTable(lines) {
     var TU = "(\\d+(?:\\.\\d+)?)\\s*(개월|년)";
+    var lineProductNames = buildLineProductNames(lines);
     var breakpoints = [];
-    lines.forEach(function (line) {
+    lines.forEach(function (line, idx) {
       var pctMatch = /(\d+(?:\.\d+)?)\s*%/.exec(line);
       if (!pctMatch) return;
       var pct = parseFloat(pctMatch[1]);
+      var productName = lineProductNames[idx];
 
       var rangeRe = new RegExp(TU + "\\s*이상\\s*" + TU + "\\s*미만");
       var m = rangeRe.exec(line);
       if (m) {
-        breakpoints.push({ minMonths: toMonthsFromUnit(parseFloat(m[1]), m[2]), maxMonths: toMonthsFromUnit(parseFloat(m[3]), m[4]), pct: pct, raw: line });
+        breakpoints.push({ minMonths: toMonthsFromUnit(parseFloat(m[1]), m[2]), maxMonths: toMonthsFromUnit(parseFloat(m[3]), m[4]), pct: pct, raw: line, productName: productName });
         return;
       }
       var underRe = new RegExp(TU + "\\s*미만");
       m = underRe.exec(line);
       if (m && line.indexOf("이상") === -1) {
-        breakpoints.push({ minMonths: 0, maxMonths: toMonthsFromUnit(parseFloat(m[1]), m[2]), pct: pct, raw: line });
+        breakpoints.push({ minMonths: 0, maxMonths: toMonthsFromUnit(parseFloat(m[1]), m[2]), pct: pct, raw: line, productName: productName });
         return;
       }
       var overRe = new RegExp(TU + "\\s*(이상|초과)");
       m = overRe.exec(line);
       if (m && line.indexOf("미만") === -1) {
-        breakpoints.push({ minMonths: toMonthsFromUnit(parseFloat(m[1]), m[2]), maxMonths: null, pct: pct, raw: line });
+        breakpoints.push({ minMonths: toMonthsFromUnit(parseFloat(m[1]), m[2]), maxMonths: null, pct: pct, raw: line, productName: productName });
       }
     });
     return breakpoints;
@@ -1463,6 +1490,34 @@
 
   function toMonthsFromUnit(n, unit) {
     return unit === "년" ? n * 12 : n;
+  }
+
+  // 카드 상품명과 PDF에서 찾은 상품명이 같은 상품을 가리키는지 본다. 완전히 같으면
+  // 항상 일치로 보고, exactOnly가 아니면 서로 포함 관계(한쪽이 다른 쪽 안에 그대로
+  // 들어있는 경우 — 예: "OO보험" vs "OO보험(디폴트옵션)")도 일치로 본다.
+  function labelMatchesCandidateName(cardLabel, candidateName, exactOnly) {
+    var a = normalizeLabelText(cardLabel);
+    var b = normalizeLabelText(candidateName);
+    if (!a || !b) return false;
+    if (a === b) return true;
+    if (exactOnly) return false;
+    return b.indexOf(a) !== -1 || a.indexOf(b) !== -1;
+  }
+
+  // 상품(또는 옵션)이 여러 개 실린 PDF에서, 이 카드의 상품명과 유일하게 일치하는 후보
+  // 하나를 찾는다. 완전히 같은 이름이 있으면 그것을 우선하고(포함 관계만 보면 기본형
+  // 이름이 변형 이름 안에도 걸려서 오히려 더 애매해질 수 있어서), 없으면 포함 관계로
+  // 다시 찾는다. 정확히 하나로 좁혀지지 않으면(상품명이 없거나 여러 개와 겹치면) null.
+  function pickUniqueCandidateForLabel(cardLabel, candidates) {
+    var labelNorm = normalizeLabelText(cardLabel);
+    if (!labelNorm) return null;
+    var exact = candidates.filter(function (c) {
+      return c.productName && normalizeLabelText(c.productName) === labelNorm;
+    });
+    var pool = exact.length ? exact : candidates.filter(function (c) {
+      return c.productName && labelMatchesCandidateName(cardLabel, c.productName, false);
+    });
+    return pool.length === 1 ? pool[0] : null;
   }
 
   // 경과기간 구분 없이 "중도해지이율은 적용이율의 60%"처럼 고정 비율만 있는 경우를 찾는다.
