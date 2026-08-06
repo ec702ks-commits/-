@@ -11,6 +11,7 @@ OUT="dist/중도해지_패널티_시뮬레이션.html"
   echo '<head>'
   echo '<meta charset="UTF-8" />'
   echo '<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />'
+  echo '<meta name="color-scheme" content="light dark" />'
   echo '<title>중도해지 패널티 시뮬레이션</title>'
   echo '<style>'
   cat style.css
