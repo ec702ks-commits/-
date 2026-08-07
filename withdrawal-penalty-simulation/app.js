@@ -286,6 +286,43 @@
     });
   }
 
+  // 납입원금을 직접 입력하지 않았을 때, 적립금을 "계약일(명세일자 입력칸)"까지 거꾸로
+  // 되감아서 "오늘 기준 순원금"을 추정한다. 적립금이 정확히 "언제 시점" 값인지(=되감기
+  // 시작점)는 두 가지 경우가 있다:
+  // - 표 형식 자동입력처럼 적립금기준일자가 명세일자와 별도로(더 뒤에) 주어졌으면, 적립금은
+  //   그 적립금기준일자 시점 값이 확실하므로 거기서부터 계약일까지 되감는다.
+  // - 적립금기준일자를 따로 못 구해서 명세일자와 같은 경우엔, 실제로는 RM이 최근/오늘 기준
+  //   적립금을 그냥 넣은 것으로 보고(=명세일자 시점 값이라고 단정할 근거가 없음) 오늘부터
+  //   계약일까지 되감는다 — 그래야 계약일~오늘 전체 기간만큼 이자를 인식해서 추정한다.
+  // 되감는 구간에 실제 인출 이력이 있으면, 되감기 시작점에서 뒤에서부터 순서대로 그
+  // 시점까지의 성장을 되돌리고 인출액을 다시 더해준 뒤 계속 계약일까지 되감는다(=인출이
+  // 없었다면 그만큼 더 컸을 잔액을 복원) — 그래야 인출이 있었던 상품도 정확한 납입원금이
+  // 나온다. 계약일 시점 원금이 나오면, 계약일~오늘 전체 기간의 인출액 합계를 그대로 빼서
+  // "오늘 기준 순원금"으로 되돌린다(순원금은 이자가 안 붙고 인출된 만큼만 줄어드는 것으로 본다).
+  function estimateNetPrincipalToday(c, r, events) {
+    var anchor = c.start.getTime() !== c.contractStart.getTime() ? c.start : c.today;
+
+    var histEvents = events
+      .filter(function (e) { return e.date.getTime() >= c.contractStart.getTime() && e.date.getTime() < anchor.getTime(); })
+      .sort(function (a, b) { return a.date.getTime() - b.date.getTime(); });
+
+    var v = c.principal;
+    var segEnd = anchor;
+    for (var i = histEvents.length - 1; i >= 0; i--) {
+      var e = histEvents[i];
+      var segYears = Math.max(0, yearsBetween(e.date, segEnd) || 0);
+      v = v / growthFactor(c.method, r, segYears) + e.amount;
+      segEnd = e.date;
+    }
+    var firstSegYears = Math.max(0, yearsBetween(c.contractStart, segEnd) || 0);
+    var principalAtContractStart = v / growthFactor(c.method, r, firstSegYears);
+
+    var withdrawnSinceContractStart = events
+      .filter(function (e) { return e.date.getTime() >= c.contractStart.getTime() && e.date.getTime() <= c.today.getTime(); })
+      .reduce(function (s, e) { return s + e.amount; }, 0);
+    return Math.max(0, principalAtContractStart - withdrawnSinceContractStart);
+  }
+
   function computeHistory(c, events) {
     if (c.principal === null || c.rate === null || !c.start || !c.today) return null;
     var r = c.rate / 100;
@@ -294,30 +331,35 @@
       .sort(function (a, b) { return a.date.getTime() - b.date.getTime(); });
 
     // "잔액"은 입력한 현재 적립금에서 출발해 그대로 굴린다.
-    // "순원금"(패널티 계산 시 원금/이자를 나누는 기준)은:
-    // - 납입원금(선택)을 입력했으면 그 값을 그대로 사용(정확).
-    // - 입력하지 않았으면 명세일자~오늘 경과기간만큼 적립금을 거꾸로
-    //   할인해서 순원금을 보수적으로 추정한다(연단리/연복리/월복리에
-    //   따라 할인 계산식이 달라진다). 납입원금을 입력하면 이 추정치보다
-    //   항상 우선 적용된다.
+    // "순원금"(패널티 계산 시 원금/이자를 나누는 기준, 오늘 기준)은:
+    // - 납입원금(선택)을 입력했으면, 계약일(명세일자) 이후 있었던 인출 이력을 전부 뺀
+    //   값을 그대로 사용한다(정확).
+    // - 입력하지 않았고 계약일 정보가 있으면, 적립금을 계약일까지 거꾸로 되감아 순원금을
+    //   추정한다(그 사이 인출 이력도 반영 — estimateNetPrincipalToday). 계약일 정보가
+    //   없으면(극히 드묾) 보수적으로 적립금 전액을 원금으로 본다.
     var netPrincipalEstimated = false;
-    var netPrincipalBase;
+    var netPrincipal;
+    var hasContractStart = c.contractStart && c.contractStart.getTime() < c.today.getTime();
     if (c.contributionPrincipal !== null) {
-      netPrincipalBase = c.contributionPrincipal;
+      var withdrawnSinceContract = hasContractStart
+        ? events.filter(function (e) { return e.date.getTime() >= c.contractStart.getTime() && e.date.getTime() <= c.today.getTime(); })
+            .reduce(function (s, e) { return s + e.amount; }, 0)
+        : validEvents.reduce(function (s, e) { return s + e.amount; }, 0);
+      netPrincipal = Math.max(0, c.contributionPrincipal - withdrawnSinceContract);
+    } else if (hasContractStart) {
+      netPrincipal = estimateNetPrincipalToday(c, r, events);
+      netPrincipalEstimated = true;
     } else {
-      var elapsedForEstimate = Math.max(0, c.elapsedYears || 0);
-      netPrincipalBase = c.principal / growthFactor(c.method, r, elapsedForEstimate);
+      netPrincipal = c.principal;
       netPrincipalEstimated = true;
     }
 
     var balance = c.principal;
-    var netPrincipal = netPrincipalBase;
     var segStart = c.start;
 
     validEvents.forEach(function (e) {
       var segYears = Math.max(0, yearsBetween(segStart, e.date) || 0);
       balance = Math.max(0, balance * growthFactor(c.method, r, segYears) - e.amount);
-      netPrincipal = Math.max(0, netPrincipal - e.amount);
       segStart = e.date;
     });
 
