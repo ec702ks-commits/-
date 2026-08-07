@@ -29,6 +29,12 @@ OUT="dist/중도해지_패널티_시뮬레이션.html"
   cat vendor/pdf.worker.min.js
   echo '</script>'
   echo '<script>'
+  cat vendor/html2canvas.min.js
+  echo '</script>'
+  echo '<script>'
+  cat vendor/jspdf.umd.min.js
+  echo '</script>'
+  echo '<script>'
   cat app.js
   echo '</script>'
   echo '</body>'

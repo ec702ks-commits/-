@@ -38,7 +38,7 @@
       "customerName", "todayDate",
       "existingProducts", "addExistingProduct",
       "newProductRows", "addProductRow",
-      "rmName", "rmDept", "rmContact", "printBtn", "resetBtn", "reportContent"
+      "rmName", "rmDept", "rmContact", "printBtn", "resetBtn", "reportContent", "reportSection"
     ].forEach(function (id) { el[id] = $(id); });
   }
 
@@ -2285,6 +2285,132 @@
       '</div>';
   }
 
+  // ---------- PDF 저장(브라우저 인쇄 대신 직접 생성) ----------
+  // 기기의 "강제 다크모드"(웹사이트를 다크 테마로 표시) 기능이 브라우저의 인쇄 파이프라인
+  // 자체를 가로채서, CSS로 아무리 밝게 고정해도(변수 고정, color-scheme, 인라인 스타일까지)
+  // 인쇄/PDF 결과가 계속 어둡게 나오는 문제가 실제 기기에서 반복 재현됐다. 그래서 브라우저의
+  // 인쇄 기능(window.print)에 기대는 대신, html2canvas로 결과 화면을 캔버스(그림)로 직접
+  // 그린 뒤 jsPDF로 PDF 파일을 만들어 바로 다운로드한다 — 살아있는 페이지를 "인쇄"하는 게
+  // 아니라 캔버스에 픽셀을 그려서 PDF에 넣는 방식이라, 브라우저의 다크모드 보정이 끼어들
+  // 지점 자체가 없다(캔버스 그리기는 그 보정 대상이 아님).
+  // jsPDF 내장 save()가 만드는 다운로드 링크는 일부 환경(예: file:// 등)에서 파일명이
+  // 한글일 때 그냥 "download"로만 저장되는 경우가 있어서, blob을 직접 받아 우리가
+  // 앵커를 만들어 내려받는다 — 그래야 원하는 파일명이 확실히 적용된다.
+  function downloadBlob(blob, filename) {
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 30000);
+  }
+
+  // 파일명은 일부러 한글을 안 쓴다 — blob 다운로드에서 한글 파일명을 쓰면 브라우저가
+  // 확장자 없는 "download"라는 이름으로 저장해버리는 경우가 실제로 있었다(확인됨).
+  // 영문/숫자만 쓰면 어떤 환경에서도 확장자(.pdf)까지 확실히 붙는다.
+  function getReportPdfFilename() {
+    var d = todayLocalDate();
+    var dateStr = d.getUTCFullYear() + ("0" + (d.getUTCMonth() + 1)).slice(-2) + ("0" + d.getUTCDate()).slice(-2);
+    return "withdrawal-penalty-simulation-" + dateStr + ".pdf";
+  }
+
+  // 카드/표 줄/타일 같은 단위가 페이지 경계에서 잘리지 않도록, "이 지점부터는 새 페이지로
+  // 넘겨도 안전하다"고 볼 수 있는 후보 지점들의 세로 위치(컨테이너 맨 위 기준)를 모은다.
+  function collectSafePageBreakOffsets(container) {
+    var selector = [
+      ".product-report", ".kpi-tile", ".conclusion-item", ".compare-row",
+      ".report-table tr", ".report-block", ".attachment-row", ".recommend-banner"
+    ].join(",");
+    var containerTop = container.getBoundingClientRect().top;
+    var offsets = [0];
+    Array.prototype.forEach.call(container.querySelectorAll(selector), function (node) {
+      var top = node.getBoundingClientRect().top - containerTop;
+      if (top > 0) offsets.push(top);
+    });
+    offsets.sort(function (a, b) { return a - b; });
+    return offsets;
+  }
+
+  // safeOffsets 중에서 target을 넘지 않는 가장 큰 값을 찾는다(=target에 최대한 가깝게
+  // 붙이되 카드 중간을 자르지 않는 지점). minOffset보다는 커야 한다(페이지가 안 줄어들게).
+  function nearestSafeOffset(safeOffsets, target, minOffset) {
+    var best = minOffset;
+    for (var i = 0; i < safeOffsets.length; i++) {
+      var v = safeOffsets[i];
+      if (v > minOffset && v <= target) best = v;
+      if (v > target) break;
+    }
+    return best;
+  }
+
+  function generateReportPdf() {
+    if (typeof html2canvas === "undefined" || typeof window.jspdf === "undefined") {
+      alert("PDF 생성 기능을 불러오지 못했습니다. 페이지를 새로고침한 뒤 다시 시도해주세요.");
+      return;
+    }
+    var target = el.reportSection;
+    if (!target) return;
+
+    var originalLabel = el.printBtn.textContent;
+    el.printBtn.disabled = true;
+    el.printBtn.textContent = "PDF 생성 중...";
+
+    // 카드 등이 잘리지 않을 안전한 페이지 분할 지점을, 캔버스로 그리기 전(요소가 실제
+    // 레이아웃된 상태)에 미리 측정해둔다.
+    var safeOffsetsCss = collectSafePageBreakOffsets(target);
+
+    html2canvas(target, {
+      scale: Math.min(2, window.devicePixelRatio || 1.5),
+      backgroundColor: "#ffffff",
+      useCORS: true,
+      logging: false
+    }).then(function (canvas) {
+      var jsPDFCtor = window.jspdf.jsPDF;
+      var pdf = new jsPDFCtor({ unit: "mm", format: "a4", compress: true });
+      var pageWidthMm = pdf.internal.pageSize.getWidth();
+      var pageHeightMm = pdf.internal.pageSize.getHeight();
+
+      // 캔버스 픽셀 <-> mm 환산 비율(캔버스 전체 너비가 페이지 너비에 딱 맞도록 스케일).
+      var pxPerMm = canvas.width / pageWidthMm;
+      var pageHeightPx = pageHeightMm * pxPerMm;
+      var safeOffsetsPx = safeOffsetsCss.map(function (v) { return v * (canvas.width / target.getBoundingClientRect().width); });
+
+      var sliceStartPx = 0;
+      var firstPage = true;
+      while (sliceStartPx < canvas.height - 1) {
+        var naiveEnd = sliceStartPx + pageHeightPx;
+        var sliceEndPx = naiveEnd >= canvas.height
+          ? canvas.height
+          : nearestSafeOffset(safeOffsetsPx, naiveEnd, sliceStartPx + pageHeightPx * 0.5);
+        if (sliceEndPx <= sliceStartPx) sliceEndPx = Math.min(canvas.height, sliceStartPx + pageHeightPx);
+
+        var sliceHeightPx = sliceEndPx - sliceStartPx;
+        var sliceCanvas = document.createElement("canvas");
+        sliceCanvas.width = canvas.width;
+        sliceCanvas.height = sliceHeightPx;
+        var ctx = sliceCanvas.getContext("2d");
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
+        ctx.drawImage(canvas, 0, sliceStartPx, canvas.width, sliceHeightPx, 0, 0, canvas.width, sliceHeightPx);
+
+        var imgData = sliceCanvas.toDataURL("image/jpeg", 0.92);
+        if (!firstPage) pdf.addPage();
+        pdf.addImage(imgData, "JPEG", 0, 0, pageWidthMm, sliceHeightPx / pxPerMm);
+        firstPage = false;
+        sliceStartPx = sliceEndPx;
+      }
+
+      downloadBlob(pdf.output("blob"), getReportPdfFilename());
+    }).catch(function (e) {
+      alert("PDF 생성 중 문제가 발생했습니다: " + (e && e.message ? e.message : e));
+    }).then(function () {
+      el.printBtn.disabled = false;
+      el.printBtn.textContent = originalLabel;
+    });
+  }
+
   // ---------- 초기화/이벤트 ----------
 
   function resetAll() {
@@ -2320,20 +2446,7 @@
     });
 
     el.printBtn.addEventListener("click", function () {
-      window.print();
-    });
-
-    // 일부 기기/브라우저의 "PDF로 저장" 인쇄 경로는 @media print를 제대로
-    // 적용하지 않고, 기기가 다크모드면 리포트 카드 배경까지 어둡게(거의
-    // 안 보이게) 그대로 인쇄해버리는 경우가 있다. CSS만으로는 이걸 확실히
-    // 못 이길 수 있어서, 인쇄가 시작되기 직전(beforeprint)에 화면 전체를
-    // 강제로 밝은 테마로 바꿔서(:root[data-theme="light"]) 인쇄한 뒤,
-    // 인쇄가 끝나면(afterprint) 원래 테마로 되돌린다.
-    window.addEventListener("beforeprint", function () {
-      document.documentElement.setAttribute("data-theme", "light");
-    });
-    window.addEventListener("afterprint", function () {
-      document.documentElement.removeAttribute("data-theme");
+      generateReportPdf();
     });
 
     el.resetBtn.addEventListener("click", function () {
