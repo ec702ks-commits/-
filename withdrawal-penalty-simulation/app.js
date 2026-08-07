@@ -3,6 +3,9 @@
 
   var PRODUCTS_KEY = "wpsim_new_products_v1";
   var RM_INFO_KEY = "wpsim_rm_info_v1";
+  // 배경색 문제 진단용 — 실제로 어느 빌드가 렌더링되는지 화면/인쇄 결과에서 바로 확인할
+  // 수 있게 매번 올릴 때 값을 바꾼다. 해결되면 이 상수와 사용처를 지운다.
+  var REPORT_BUILD_TAG = "2026-08-07-inline-colors-1";
 
   var DEFAULT_ROWS = [
     { label: "1년", years: 1, method: "simple" },
@@ -1646,18 +1649,18 @@
       });
     });
 
-    var html = '<div class="table-scroll"><table class="report-table attachment-excel-table"><tbody>';
+    var html = '<div class="table-scroll"><table class="report-table attachment-excel-table" style="color:#131b2b;"><tbody>';
     sheet.rows.forEach(function (row) {
       html += "<tr>";
       row.forEach(function (cell, ci) {
         if (dropCols[ci]) return;
-        html += (wideCols[ci] ? '<td class="col-wide">' : "<td>") + escapeHtml(cell === null || cell === undefined ? "" : cell) + "</td>";
+        html += (wideCols[ci] ? '<td class="col-wide" style="border-color:#d8dae0;">' : '<td style="border-color:#d8dae0;">') + escapeHtml(cell === null || cell === undefined ? "" : cell) + "</td>";
       });
       html += "</tr>";
     });
     html += "</tbody></table></div>";
     if (sheet.truncated) {
-      html += '<p class="cell-note">(내용이 많아 앞부분만 표시했습니다. 전체 내용은 원본 파일을 확인해주세요.)</p>';
+      html += '<p class="cell-note" style="color:#5c6576;">(내용이 많아 앞부분만 표시했습니다. 전체 내용은 원본 파일을 확인해주세요.)</p>';
     }
     return html;
   }
@@ -1964,34 +1967,34 @@
   // 한 줄씩 모아서 보여주는 결론 요약. 표는 좁은 화면에서 옆으로 잘리기 쉬워서
   // 자연스럽게 줄바꿈되는 카드 목록으로 구성한다.
   function buildConclusionSummary(validResults) {
-    var html = '<div class="report-block conclusion-summary"><h3>결론: 명세별 추천</h3>';
+    var html = '<div class="report-block conclusion-summary" style="background:#ffffff;color:#131b2b;"><h3>결론: 명세별 추천</h3>';
     html += '<div class="conclusion-list">';
     validResults.forEach(function (r, idx) {
       var c = r.c, bestRow = r.bestRow;
       var name = escapeHtml(c.label || "기존상품 " + (idx + 1));
-      var verdict, diffText, cls;
+      var verdict, diffText, cls, badgeBg, textColor;
       if (bestRow && bestRow.diff !== null) {
         if (bestRow.diff > 0) {
           verdict = "재예치(" + escapeHtml(bestRow.label) + ")";
           diffText = formatSignedWon(bestRow.diff) + " 더 유리";
-          cls = "better";
+          cls = "better"; badgeBg = "#e3f6e3"; textColor = "#0ca30c";
         } else {
           verdict = "유지";
           diffText = formatSignedWon(-bestRow.diff) + " 더 유리";
-          cls = "hold";
+          cls = "hold"; badgeBg = "#e3ecfb"; textColor = "#1c5cab";
         }
       } else {
         verdict = "-";
         diffText = "신상품 금리 입력 필요";
-        cls = "neutral";
+        cls = "neutral"; badgeBg = "#f5f7fb"; textColor = "#5c6576";
       }
-      html += '<div class="conclusion-item">' +
+      html += '<div class="conclusion-item" style="background:#ffffff;color:#131b2b;">' +
         '<div class="conclusion-item-top">' +
-          '<span class="conclusion-num">' + (idx + 1) + '</span>' +
-          '<span class="conclusion-title">' + name + '</span>' +
-          '<span class="badge ' + cls + '">' + verdict + '</span>' +
+          '<span class="conclusion-num" style="background:#0b1f3d;color:#ffffff;">' + (idx + 1) + '</span>' +
+          '<span class="conclusion-title" style="color:#131b2b;">' + name + '</span>' +
+          '<span class="badge ' + cls + '" style="background:' + badgeBg + ';color:' + textColor + ';">' + verdict + '</span>' +
         '</div>' +
-        '<div class="conclusion-item-diff ' + cls + '">' + diffText + '</div>' +
+        '<div class="conclusion-item-diff ' + cls + '" style="color:' + textColor + ';">' + diffText + '</div>' +
       '</div>';
     });
     html += '</div></div>';
@@ -2004,9 +2007,9 @@
     var html = '<div class="breakdown-list">';
     validResults.forEach(function (r, idx) {
       var name = escapeHtml(r.c.label || "기존상품 " + (idx + 1));
-      html += '<div class="breakdown-row">' +
-        '<span class="breakdown-name">' + (idx + 1) + '. ' + name + '</span>' +
-        '<span class="breakdown-vals">' +
+      html += '<div class="breakdown-row" style="color:#131b2b;">' +
+        '<span class="breakdown-name" style="color:#131b2b;">' + (idx + 1) + '. ' + name + '</span>' +
+        '<span class="breakdown-vals" style="color:#5c6576;">' +
           '<span>해지적립금 ' + formatWon(r.penalty.cancelAmount) + '</span>' +
           '<span>만기까지 유지 시 ' + formatWon(r.holdAmountForCompare) + '</span>' +
         '</span>' +
@@ -2038,10 +2041,10 @@
     var html = "";
 
     // ---- 배너 ----
-    html += '<div class="report-banner">';
-    html += '<p class="report-banner-eyebrow">퇴직연금 상품 제안서' + (multi ? " · 기존상품 " + validResults.length + "건" : "") + '</p>';
-    html += '<p class="report-title">중도해지 · 재예치 시뮬레이션' + (customerName ? " — " + escapeHtml(customerName) : "") + '</p>';
-    html += '<p class="report-meta">작성일 ' + formatDateUTC(todayLocalDate()) + (todayVal ? ' · 해지(기준)일 ' + formatDateUTC(todayVal) : '') + '</p>';
+    html += '<div class="report-banner" style="background:#f5ead0;color:#131b2b;border-color:#0b1f3d;">';
+    html += '<p class="report-banner-eyebrow" style="color:#96701e;">퇴직연금 상품 제안서' + (multi ? " · 기존상품 " + validResults.length + "건" : "") + '</p>';
+    html += '<p class="report-title" style="color:#0b1f3d;">중도해지 · 재예치 시뮬레이션' + (customerName ? " — " + escapeHtml(customerName) : "") + '</p>';
+    html += '<p class="report-meta" style="color:#5c6576;">작성일 ' + formatDateUTC(todayLocalDate()) + (todayVal ? ' · 해지(기준)일 ' + formatDateUTC(todayVal) : '') + '</p>';
     html += '</div>';
 
     // ---- 결론(두괄식): 명세별 추천을 세부 내용보다 먼저 한눈에 ----
@@ -2055,7 +2058,7 @@
         totalCancel += r.penalty.cancelAmount;
         if (r.holdAmountForCompare !== null) { totalHold += r.holdAmountForCompare; holdKnownCount++; }
       });
-      html += '<div class="report-block"><h3>기존상품 ' + validResults.length + '건 합계</h3>';
+      html += '<div class="report-block" style="background:#ffffff;color:#131b2b;"><h3>기존상품 ' + validResults.length + '건 합계</h3>';
       html += '<div class="kpi-row">';
       html += kpiTile("총 해지적립금 합계(오늘 기준)", formatWon(totalCancel), "모두 오늘 해지할 경우 재예치 가능한 총액", false);
       html += kpiTile("총 만기유지 시 합계", formatWon(totalHold), holdKnownCount === validResults.length ? "각 상품 자기 만기일 기준 합계(만기 시점은 상품마다 다름)" : "일부 상품은 정보 부족으로 제외됨", false);
@@ -2069,14 +2072,18 @@
       html += buildProductReportSection(r, idx, multi);
     });
 
-    html += '<p class="report-disclaimer">본 시뮬레이션은 입력하신 정보를 기준으로 한 추정 참고자료이며, 실제 적용금리·세금·수수료 등에 따라 실수령액과 차이가 있을 수 있습니다. 신상품 재예치 금액은 각 기존상품 만기일까지의 잔여기간에 제안금리(단리)를 적용해 환산한 값이며, 상품 자체 만기가 그보다 짧거나 길 경우 이후 재투자 조건은 별도로 확인이 필요합니다. 신상품 제안금리는 안내 시점 기준이며 향후 변동될 수 있습니다.' +
+    html += '<p class="report-disclaimer" style="color:#5c6576;">본 시뮬레이션은 입력하신 정보를 기준으로 한 추정 참고자료이며, 실제 적용금리·세금·수수료 등에 따라 실수령액과 차이가 있을 수 있습니다. 신상품 재예치 금액은 각 기존상품 만기일까지의 잔여기간에 제안금리(단리)를 적용해 환산한 값이며, 상품 자체 만기가 그보다 짧거나 길 경우 이후 재투자 조건은 별도로 확인이 필요합니다. 신상품 제안금리는 안내 시점 기준이며 향후 변동될 수 있습니다.' +
       (validResults.some(function (r) { return r.history && r.history.hasEvents; }) ? ' 중간인출 이력은 인출액이 원금에서 먼저 차감된 것으로 보수적으로 가정해 계산했으며, 정확한 금액은 상품사 확인이 필요합니다.' : '') +
       (validResults.some(function (r) { return r.history && r.history.netPrincipalEstimated; }) ? ' 납입원금을 별도로 입력하지 않은 상품은 현재 적립금을 경과기간만큼 할인해 순원금을 추정했습니다. 정확한 납입원금을 입력하시면 더 정확한 패널티 계산이 가능합니다.' : '') +
       '</p>';
 
     if (rm.name || rm.dept || rm.contact) {
-      html += '<p class="report-signature">' + [rm.dept, rm.name, rm.contact].filter(Boolean).join(" · ") + "</p>";
+      html += '<p class="report-signature" style="color:#131b2b;border-color:#f5ead0;">' + [rm.dept, rm.name, rm.contact].filter(Boolean).join(" · ") + "</p>";
     }
+
+    // 배경색 문제가 반복 재현돼서, 지금 실제로 어느 빌드가 렌더링되고 있는지 화면/인쇄
+    // 결과에서 바로 확인할 수 있게 작은 버전 표시를 남긴다(문제 해결되면 지워도 됨).
+    html += '<p style="margin-top:8px;font-size:0.66rem;color:#b7bdc9;">build ' + REPORT_BUILD_TAG + '</p>';
 
     el.reportContent.innerHTML = html;
   }
@@ -2086,26 +2093,26 @@
     var bestRow = r.bestRow;
     if (bestRow && bestRow.diff !== null) {
       if (bestRow.diff > 0) {
-        return '<div class="recommend-banner recommend-switch">' +
+        return '<div class="recommend-banner recommend-switch" style="background:#f5ead0;border-color:#b8892b;color:#0b1f3d;">' +
           '<p class="recommend-eyebrow">이 명세, 이렇게 하세요</p>' +
-          '<p class="recommend-headline">중도해지 후 <strong>' + escapeHtml(bestRow.label) + '</strong> 재예치 추천</p>' +
-          '<p class="recommend-detail">만기까지 유지 대비 <strong>' + formatSignedWon(bestRow.diff) + '</strong> 더 유리 (제안금리 ' + formatPct(bestRow.rate) + ', ' + methodLabel(bestRow.method) + ')</p>' +
+          '<p class="recommend-headline">중도해지 후 <strong style="color:#96701e;">' + escapeHtml(bestRow.label) + '</strong> 재예치 추천</p>' +
+          '<p class="recommend-detail">만기까지 유지 대비 <strong style="color:#96701e;">' + formatSignedWon(bestRow.diff) + '</strong> 더 유리 (제안금리 ' + formatPct(bestRow.rate) + ', ' + methodLabel(bestRow.method) + ')</p>' +
           '</div>';
       }
-      return '<div class="recommend-banner recommend-hold">' +
+      return '<div class="recommend-banner recommend-hold" style="background:#eaf1fb;border-color:#1c5cab;color:#0b1f3d;">' +
         '<p class="recommend-eyebrow">이 명세, 이렇게 하세요</p>' +
-        '<p class="recommend-headline">만기까지 <strong>유지</strong> 추천</p>' +
-        '<p class="recommend-detail">재예치 최선안(' + escapeHtml(bestRow.label) + ') 대비 <strong>' + formatSignedWon(-bestRow.diff) + '</strong> 더 유리</p>' +
+        '<p class="recommend-headline">만기까지 <strong style="color:#1c5cab;">유지</strong> 추천</p>' +
+        '<p class="recommend-detail">재예치 최선안(' + escapeHtml(bestRow.label) + ') 대비 <strong style="color:#1c5cab;">' + formatSignedWon(-bestRow.diff) + '</strong> 더 유리</p>' +
         '</div>';
     }
     if (bestRow) {
-      return '<div class="recommend-banner recommend-neutral">' +
+      return '<div class="recommend-banner recommend-neutral" style="background:#f7f9fc;color:#131b2b;">' +
         '<p class="recommend-eyebrow">이 명세, 이렇게 하세요</p>' +
         '<p class="recommend-headline">최선 재예치 옵션: <strong>' + escapeHtml(bestRow.label) + '</strong></p>' +
         '<p class="recommend-detail">만기까지 유지 시 예상 수령액을 입력하면 정확한 유불리를 비교해드립니다</p>' +
         '</div>';
     }
-    return '<div class="recommend-banner recommend-neutral">' +
+    return '<div class="recommend-banner recommend-neutral" style="background:#f7f9fc;color:#131b2b;">' +
       '<p class="recommend-eyebrow">이 명세, 이렇게 하세요</p>' +
       '<p class="recommend-headline">신상품 제안금리를 입력하면 추천이 표시됩니다</p>' +
       '</div>';
@@ -2116,9 +2123,9 @@
     var holdAmountForCompare = r.holdAmountForCompare, breakEvenRate = r.breakEvenRate;
     var html = "";
 
-    html += '<div class="product-report' + (multi ? " product-report-divided" : "") + '">';
+    html += '<div class="product-report' + (multi ? " product-report-divided" : "") + '" style="background:#ffffff;color:#131b2b;">';
     if (multi) {
-      html += '<h3 class="product-report-title">기존상품 ' + (idx + 1) + (c.label ? ' — ' + escapeHtml(c.label) : '') + '</h3>';
+      html += '<h3 class="product-report-title" style="color:#0b1f3d;">기존상품 ' + (idx + 1) + (c.label ? ' — ' + escapeHtml(c.label) : '') + '</h3>';
     }
 
     // ---- 결론(추천) 배너: 세부 수치보다 먼저 보여준다 ----
@@ -2146,7 +2153,7 @@
 
     // ---- 상세 정보 ----
     var asOfDiffers = c.contractStart && Math.abs(c.start.getTime() - c.contractStart.getTime()) > 24 * 3600 * 1000;
-    html += '<div class="report-block"><h4>기존상품 정보</h4>';
+    html += '<div class="report-block" style="background:#ffffff;color:#131b2b;"><h4>기존상품 정보</h4>';
     html += kv(asOfDiffers ? "현재 적립금(적립금 산정일 " + formatDateUTC(c.start) + " 기준)" : "현재 적립금(명세일자 기준)", formatWon(c.principal));
     if (c.contributionPrincipal !== null) {
       html += kv("납입원금(참고)", formatWon(c.contributionPrincipal));
@@ -2168,41 +2175,41 @@
     }
     html += "</div>";
 
-    html += '<div class="report-block"><h4>중도해지 시</h4>';
+    html += '<div class="report-block" style="background:#ffffff;color:#131b2b;"><h4>중도해지 시</h4>';
     html += kv("해지방식", penalty.mode === "direct" ? "해지적립금 직접입력" : "적용이율 비율 방식");
     if (penalty.penaltyAmount !== null) html += kv("해지패널티 금액", formatWon(penalty.penaltyAmount));
     html += kv("해지적립금(재예치 원금)", formatWon(penalty.cancelAmount));
     html += "</div>";
 
     if (r.product.attachments && r.product.attachments.length) {
-      html += '<div class="report-block"><h4>첨부: 해지패널티 계산 자료</h4>';
+      html += '<div class="report-block" style="background:#ffffff;color:#131b2b;"><h4>첨부: 해지패널티 계산 자료</h4>';
       r.product.attachments.forEach(function (a) {
         if (a.kind === "excel") {
           a.sheets.forEach(function (sheet) {
             if (a.sheets.length > 1) {
-              html += '<p class="cell-note"><strong>' + escapeHtml(a.name) + '</strong> — 시트: ' + escapeHtml(sheet.name) + '</p>';
+              html += '<p class="cell-note" style="color:#5c6576;"><strong style="color:#131b2b;">' + escapeHtml(a.name) + '</strong> — 시트: ' + escapeHtml(sheet.name) + '</p>';
             } else {
-              html += '<p class="cell-note">' + escapeHtml(a.name) + '</p>';
+              html += '<p class="cell-note" style="color:#5c6576;">' + escapeHtml(a.name) + '</p>';
             }
             html += renderSheetTableHtml(sheet);
           });
         } else {
-          html += '<p class="cell-note">' + escapeHtml(a.name) + ' — 상품설명서 중 중도해지 관련 문구(참고용, RM 확인 필요)</p>';
+          html += '<p class="cell-note" style="color:#5c6576;">' + escapeHtml(a.name) + ' — 상품설명서 중 중도해지 관련 문구(참고용, RM 확인 필요)</p>';
           if (a.matchedTier) {
-            html += '<p class="cell-note">경과기간별 적용비율표에서 "' + escapeHtml(a.matchedTier.raw) + '" 구간이 적용되어 적용이율 비율 <strong>' + a.matchedTier.pct + '%</strong>로 자동 설정됨</p>';
+            html += '<p class="cell-note" style="color:#5c6576;">경과기간별 적용비율표에서 "' + escapeHtml(a.matchedTier.raw) + '" 구간이 적용되어 적용이율 비율 <strong style="color:#131b2b;">' + a.matchedTier.pct + '%</strong>로 자동 설정됨</p>';
           } else if (a.matchedFlatRatio) {
-            html += '<p class="cell-note">' + (a.matchedFlatRatio.productName ? '[' + escapeHtml(a.matchedFlatRatio.productName) + '] ' : '') +
-              '"' + escapeHtml(a.matchedFlatRatio.raw) + '"에서 적용이율 비율 <strong>' + a.matchedFlatRatio.pct + '%</strong>로 자동 설정됨' +
+            html += '<p class="cell-note" style="color:#5c6576;">' + (a.matchedFlatRatio.productName ? '[' + escapeHtml(a.matchedFlatRatio.productName) + '] ' : '') +
+              '"' + escapeHtml(a.matchedFlatRatio.raw) + '"에서 적용이율 비율 <strong style="color:#131b2b;">' + a.matchedFlatRatio.pct + '%</strong>로 자동 설정됨' +
               (a.flatMatchReason === "label" ? ' (상품명 일치로 자동 선택됨)' : '') + '</p>';
           } else if (a.flatRatios && a.flatRatios.length > 1) {
-            html += '<p class="cell-note">고정 중도해지비율 후보 ' + a.flatRatios.length + '개 발견(상품/옵션이 여러 개라 자동 설정 안 됨) — 아래에서 확인 후 직접 입력 필요</p>';
-            html += '<pre class="pdf-snippet">' + escapeHtml(a.flatRatios.map(function (r2) { return (r2.productName ? '[' + r2.productName + '] ' : '') + r2.raw; }).join("\n")) + '</pre>';
+            html += '<p class="cell-note" style="color:#5c6576;">고정 중도해지비율 후보 ' + a.flatRatios.length + '개 발견(상품/옵션이 여러 개라 자동 설정 안 됨) — 아래에서 확인 후 직접 입력 필요</p>';
+            html += '<pre class="pdf-snippet" style="background:#ffffff;color:#131b2b;border-color:#dde2ea;">' + escapeHtml(a.flatRatios.map(function (r2) { return (r2.productName ? '[' + r2.productName + '] ' : '') + r2.raw; }).join("\n")) + '</pre>';
           }
           a.snippets.forEach(function (s) {
             html += s.productName
-              ? '<p class="cell-note"><strong>[' + escapeHtml(s.productName) + ']</strong></p>'
-              : '<p class="cell-note">[공통 안내]</p>';
-            html += '<pre class="pdf-snippet">' + escapeHtml(s.text) + '</pre>';
+              ? '<p class="cell-note" style="color:#5c6576;"><strong style="color:#131b2b;">[' + escapeHtml(s.productName) + ']</strong></p>'
+              : '<p class="cell-note" style="color:#5c6576;">[공통 안내]</p>';
+            html += '<pre class="pdf-snippet" style="background:#ffffff;color:#131b2b;border-color:#dde2ea;">' + escapeHtml(s.text) + '</pre>';
           });
         }
       });
@@ -2221,7 +2228,7 @@
     if (!diffRows.length) return "";
 
     var maxAbs = Math.max.apply(null, diffRows.map(function (rr) { return Math.abs(rr.diff); })) || 1;
-    var html = '<div class="report-block"><h4>신상품 옵션별 유불리(만기까지 유지 대비)</h4>';
+    var html = '<div class="report-block" style="background:#ffffff;color:#131b2b;"><h4>신상품 옵션별 유불리(만기까지 유지 대비)</h4>';
     html += '<div class="compare-bars">';
     var c = r.c;
     diffRows.forEach(function (rr) {
@@ -2236,45 +2243,45 @@
         // "OO이 이미 더 유리"처럼 문장으로 바로 알려준다.
         var aheadAlready = rr.requiredReinvestRate <= 0;
         guideNote = rr.horizonDiffYears > 0
-          ? ('<div class="compare-guide">이 상품 만기는 ' + formatDateUTC(rr.ownMaturityDate) + '로 기존상품 만기(' + formatDateUTC(c.maturity) + ')보다 ' + formatYears(rr.gapYears) + ' 늦습니다 — ' +
+          ? ('<div class="compare-guide" style="background:#f7f9fc;color:#5c6576;border-color:#dde2ea;">이 상품 만기는 ' + formatDateUTC(rr.ownMaturityDate) + '로 기존상품 만기(' + formatDateUTC(c.maturity) + ')보다 ' + formatYears(rr.gapYears) + ' 늦습니다 — ' +
               (aheadAlready
-                ? '기존상품을 만기까지 유지하기만 해도 이미 이 상품의 자체 만기 시점 금액을 넘어서 있어(그 뒤 ' + formatYears(rr.gapYears) + '을 마이너스로 재예치해도 동등), <strong>기존상품 유지가 이미 더 유리</strong>합니다.'
-                : '기존상품을 만기까지 유지한 뒤 그 이후 ' + formatYears(rr.gapYears) + '간 최소 <strong>' + formatPct(rr.requiredReinvestRate) + '(연단리 기준)</strong> 이상 재예치해야 이 상품과 동등해집니다.') +
+                ? '기존상품을 만기까지 유지하기만 해도 이미 이 상품의 자체 만기 시점 금액을 넘어서 있어(그 뒤 ' + formatYears(rr.gapYears) + '을 마이너스로 재예치해도 동등), <strong style="color:#0b1f3d;">기존상품 유지가 이미 더 유리</strong>합니다.'
+                : '기존상품을 만기까지 유지한 뒤 그 이후 ' + formatYears(rr.gapYears) + '간 최소 <strong style="color:#0b1f3d;">' + formatPct(rr.requiredReinvestRate) + '(연단리 기준)</strong> 이상 재예치해야 이 상품과 동등해집니다.') +
             '</div>')
-          : ('<div class="compare-guide">이 상품 만기는 ' + formatDateUTC(rr.ownMaturityDate) + '로 기존상품 만기(' + formatDateUTC(c.maturity) + ')보다 ' + formatYears(rr.gapYears) + ' 빠릅니다 — ' +
+          : ('<div class="compare-guide" style="background:#f7f9fc;color:#5c6576;border-color:#dde2ea;">이 상품 만기는 ' + formatDateUTC(rr.ownMaturityDate) + '로 기존상품 만기(' + formatDateUTC(c.maturity) + ')보다 ' + formatYears(rr.gapYears) + ' 빠릅니다 — ' +
               (aheadAlready
-                ? '이 상품이 자체 만기 시점에 이미 기존상품을 만기까지 유지한 금액을 넘어서 있어(그 뒤 ' + formatYears(rr.gapYears) + '을 마이너스로 재예치해도 동등), <strong>이 상품이 이미 더 유리</strong>합니다.'
-                : '이 상품 만기 이후 ' + formatYears(rr.gapYears) + '간 최소 <strong>' + formatPct(rr.requiredReinvestRate) + '(연단리 기준)</strong> 이상 재예치해야 기존상품 유지와 동등해집니다.') +
+                ? '이 상품이 자체 만기 시점에 이미 기존상품을 만기까지 유지한 금액을 넘어서 있어(그 뒤 ' + formatYears(rr.gapYears) + '을 마이너스로 재예치해도 동등), <strong style="color:#0b1f3d;">이 상품이 이미 더 유리</strong>합니다.'
+                : '이 상품 만기 이후 ' + formatYears(rr.gapYears) + '간 최소 <strong style="color:#0b1f3d;">' + formatPct(rr.requiredReinvestRate) + '(연단리 기준)</strong> 이상 재예치해야 기존상품 유지와 동등해집니다.') +
             '</div>');
       }
-      html += '<div class="compare-row' + (isBest ? " compare-best" : "") + '">' +
+      html += '<div class="compare-row' + (isBest ? " compare-best" : "") + '"' + (isBest ? ' style="background:#f5ead0;"' : '') + '>' +
         '<div class="compare-label">' +
-          '<span class="compare-name">' + escapeHtml(rr.label) + (isBest ? ' <span class="badge accent">최선</span>' : '') + '</span>' +
-          '<span class="compare-sub">제안금리 ' + formatPct(rr.rate) + '(' + methodLabel(rr.method) + ') · 만기 시 ' + formatWon(rr.maturityAmount) + '</span>' +
+          '<span class="compare-name" style="color:#131b2b;">' + escapeHtml(rr.label) + (isBest ? ' <span class="badge accent">최선</span>' : '') + '</span>' +
+          '<span class="compare-sub" style="color:#5c6576;">제안금리 ' + formatPct(rr.rate) + '(' + methodLabel(rr.method) + ') · 만기 시 ' + formatWon(rr.maturityAmount) + '</span>' +
         '</div>' +
-        '<div class="compare-track">' +
+        '<div class="compare-track" style="background:#f5f7fb;">' +
           '<div class="compare-zero"></div>' +
           '<div class="compare-bar ' + (better ? "better" : "worse") + '" style="' + (better ? "left:50%;width:" + halfPct : "right:50%;width:" + halfPct) + '%"></div>' +
         '</div>' +
-        '<div class="compare-diff ' + (better ? "better" : "worse") + '">' + formatSignedWon(rr.diff) + '</div>' +
+        '<div class="compare-diff ' + (better ? "better" : "worse") + '" style="color:' + (better ? "#0ca30c" : "#d03b3b") + ';">' + formatSignedWon(rr.diff) + '</div>' +
         guideNote +
       '</div>';
     });
     html += '</div>';
-    html += '<p class="chart-caption">"만기까지 유지 시" 대비 차액(이 상품 만기일 기준 환산). 오른쪽(초록) = 재예치 유리 · 왼쪽(빨강) = 유지 유리.</p>';
+    html += '<p class="chart-caption" style="color:#5c6576;">"만기까지 유지 시" 대비 차액(이 상품 만기일 기준 환산). 오른쪽(초록) = 재예치 유리 · 왼쪽(빨강) = 유지 유리.</p>';
     html += '</div>';
     return html;
   }
 
   function kv(label, value) {
-    return '<div class="report-kv"><span>' + escapeHtml(label) + '</span><span>' + value + "</span></div>";
+    return '<div class="report-kv" style="color:#131b2b;border-color:#d8dae0;"><span style="color:#5c6576;">' + escapeHtml(label) + '</span><span style="color:#131b2b;">' + value + "</span></div>";
   }
 
   function kpiTile(label, value, sub, accent) {
-    return '<div class="kpi-tile' + (accent ? ' accent' : '') + '">' +
-      '<p class="kpi-label">' + escapeHtml(label) + '</p>' +
-      '<p class="kpi-value">' + value + '</p>' +
-      (sub ? '<p class="kpi-sub">' + escapeHtml(sub) + '</p>' : '') +
+    return '<div class="kpi-tile' + (accent ? ' accent' : '') + '" style="background:' + (accent ? '#f5ead0' : '#f7f9fc') + ';color:#131b2b;">' +
+      '<p class="kpi-label" style="color:#5c6576;">' + escapeHtml(label) + '</p>' +
+      '<p class="kpi-value" style="color:' + (accent ? '#96701e' : '#0b1f3d') + ';">' + value + '</p>' +
+      (sub ? '<p class="kpi-sub" style="color:#5c6576;">' + escapeHtml(sub) + '</p>' : '') +
       '</div>';
   }
 
