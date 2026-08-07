@@ -783,6 +783,30 @@ footer {
   line-height: 1.5;
 }
 
+/* .report-banner 기본값(진한 남색 그라디언트 + 흰 글자)은 화면용 디자인이고, 인쇄/PDF는
+   변환기가 그라디언트 배경을 못 그리면 흰 글자가 흰 배경 위에 남아 안 보일 위험이 있어
+   원래 @media print에서만 옅은 배경으로 바꿔줬었다. 그런데 그 전환이 @media print가
+   제대로 인식될 때만 적용돼서, 인식 안 되는 PDF 변환 경로에서는 그대로 진한 배경이
+   남는 문제가 있었다(반복 재현됨). #reportSection 안에서는 인쇄 여부와 무관하게 항상
+   옅은 배경으로 고정해 화면 미리보기와 인쇄 결과를 일치시킨다. */
+#reportSection .report-banner {
+  background: var(--gold-soft);
+  border: 2px solid var(--navy-900);
+  color: var(--text);
+}
+
+#reportSection .report-banner-eyebrow {
+  color: var(--gold-strong);
+}
+
+#reportSection .report-banner .report-title {
+  color: var(--navy-900);
+}
+
+#reportSection .report-banner .report-meta {
+  color: var(--text-muted);
+}
+
 .kpi-row {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
