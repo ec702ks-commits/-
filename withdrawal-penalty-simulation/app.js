@@ -3,9 +3,6 @@
 
   var PRODUCTS_KEY = "wpsim_new_products_v1";
   var RM_INFO_KEY = "wpsim_rm_info_v1";
-  // 배경색 문제 진단용 — 실제로 어느 빌드가 렌더링되는지 화면/인쇄 결과에서 바로 확인할
-  // 수 있게 매번 올릴 때 값을 바꾼다. 해결되면 이 상수와 사용처를 지운다.
-  var REPORT_BUILD_TAG = "2026-08-07-inline-colors-1";
 
   var DEFAULT_ROWS = [
     { label: "1년", years: 1, method: "simple" },
@@ -1649,14 +1646,22 @@
       });
     });
 
-    var html = '<div class="table-scroll"><table class="report-table attachment-excel-table" style="color:#131b2b;"><tbody>';
-    sheet.rows.forEach(function (row) {
+    // 첫 행은 열 제목으로 보고 <thead>로 따로 뺀다 — 눈에 잘 띄게 강조되기도 하고,
+    // PDF로 뽑을 때 표가 페이지 경계에서 잘려 다음 페이지로 넘어가면 이 헤더 행을
+    // 그 페이지 위에도 다시 그려서 어느 열인지 알아볼 수 있게 하는 데도 쓴다.
+    var html = '<div class="table-scroll"><table class="report-table attachment-excel-table" style="color:#131b2b;" data-role="report-table">';
+    sheet.rows.forEach(function (row, ri) {
+      if (ri === 0) html += '<thead data-role="table-header">';
       html += "<tr>";
       row.forEach(function (cell, ci) {
         if (dropCols[ci]) return;
-        html += (wideCols[ci] ? '<td class="col-wide" style="border-color:#d8dae0;">' : '<td style="border-color:#d8dae0;">') + escapeHtml(cell === null || cell === undefined ? "" : cell) + "</td>";
+        var tag = ri === 0 ? "th" : "td";
+        var cls = wideCols[ci] ? ' class="col-wide"' : "";
+        var style = ri === 0 ? ' style="border-color:#d8dae0;background:#f5f7fb;color:#0b1f3d;"' : ' style="border-color:#d8dae0;"';
+        html += "<" + tag + cls + style + ">" + escapeHtml(cell === null || cell === undefined ? "" : cell) + "</" + tag + ">";
       });
       html += "</tr>";
+      if (ri === 0) html += "</thead><tbody>";
     });
     html += "</tbody></table></div>";
     if (sheet.truncated) {
@@ -2081,10 +2086,6 @@
       html += '<p class="report-signature" style="color:#131b2b;border-color:#f5ead0;">' + [rm.dept, rm.name, rm.contact].filter(Boolean).join(" · ") + "</p>";
     }
 
-    // 배경색 문제가 반복 재현돼서, 지금 실제로 어느 빌드가 렌더링되고 있는지 화면/인쇄
-    // 결과에서 바로 확인할 수 있게 작은 버전 표시를 남긴다(문제 해결되면 지워도 됨).
-    html += '<p style="margin-top:8px;font-size:0.66rem;color:#b7bdc9;">build ' + REPORT_BUILD_TAG + '</p>';
-
     el.reportContent.innerHTML = html;
   }
 
@@ -2333,6 +2334,29 @@
     return offsets;
   }
 
+  // 표(엑셀 첨부 등)가 페이지 경계에서 잘려 다음 페이지로 넘어갈 때 헤더 행(열 제목)이
+  // 안 보이면 어느 열인지 알 수 없어서 지저분해 보인다(실제로 확인됨). 각 표의
+  // [머리글 위/아래, 표 전체 위/아래] 픽셀 범위를 미리 재서, 페이지 분할 로직이
+  // (1) 되도록 표를 안 자르고 통째로 다음 페이지로 넘기게 하고, (2) 그래도 표가 한
+  // 페이지보다 커서 어쩔 수 없이 중간에서 잘라야 하면 새 페이지 위에 헤더를 다시
+  // 그려 넣게 한다.
+  function collectTableInfo(container) {
+    var containerTop = container.getBoundingClientRect().top;
+    var tables = [];
+    Array.prototype.forEach.call(container.querySelectorAll('[data-role="report-table"]'), function (tbl) {
+      var tblRect = tbl.getBoundingClientRect();
+      var info = { top: tblRect.top - containerTop, bottom: tblRect.bottom - containerTop };
+      var header = tbl.querySelector('[data-role="table-header"]');
+      if (header) {
+        var hRect = header.getBoundingClientRect();
+        info.headerTop = hRect.top - containerTop;
+        info.headerBottom = hRect.bottom - containerTop;
+      }
+      tables.push(info);
+    });
+    return tables;
+  }
+
   // 기존상품이 여러 건이면(.product-report-divided) 화면 미리보기와 마찬가지로 상품별로
   // 항상 새 페이지에서 시작하게 한다 — collectSafePageBreakOffsets는 "잘리지만 않으면
   // 되는" 후보일 뿐이라 페이지에 자리가 남으면 다음 상품을 이어붙일 수 있는데, 상품별로
@@ -2356,6 +2380,27 @@
       var v = safeOffsets[i];
       if (v > minOffset && v <= target) best = v;
       if (v > target) break;
+    }
+    return best;
+  }
+
+  // pos가 어떤 표의 내부(맨 위 행 다음부터 끝 전까지)인지 찾는다 — 그렇다면 이 페이지는
+  // 그 표가 이어지는 페이지라는 뜻이라 헤더를 다시 그려줘야 한다.
+  function findTableContaining(tables, pos) {
+    for (var i = 0; i < tables.length; i++) {
+      var t = tables[i];
+      if (pos > t.top && pos < t.bottom) return t;
+    }
+    return null;
+  }
+
+  // pos 이후 가장 먼저 시작하는 표를 찾는다(표를 안 자르고 통째로 다음 페이지로 넘길지
+  // 판단하는 데 쓴다).
+  function findNextTableStartAfter(tables, pos) {
+    var best = null;
+    for (var i = 0; i < tables.length; i++) {
+      var t = tables[i];
+      if (t.top > pos && (best === null || t.top < best.top)) best = t;
     }
     return best;
   }
@@ -2399,6 +2444,7 @@
     // 미리 측정해둔다. 복제본 기준으로 측정해야 실제 캡처될 레이아웃과 일치한다.
     var safeOffsetsCss = collectSafePageBreakOffsets(clone);
     var hardOffsetsCss = collectHardPageBreakOffsets(clone);
+    var tablesCss = collectTableInfo(clone);
 
     html2canvas(clone, {
       scale: 2,
@@ -2421,10 +2467,28 @@
       var pageHeightPx = pageHeightMm * pxPerMm;
       var safeOffsetsPx = safeOffsetsCss.map(function (v) { return v * (canvas.width / PDF_CAPTURE_WIDTH); });
       var hardOffsetsPx = hardOffsetsCss.map(function (v) { return v * (canvas.width / PDF_CAPTURE_WIDTH); });
+      var tableScale = canvas.width / PDF_CAPTURE_WIDTH;
+      var tablesPx = tablesCss.map(function (t) {
+        var scaled = { top: t.top * tableScale, bottom: t.bottom * tableScale };
+        if (t.headerTop !== undefined) {
+          scaled.headerTop = t.headerTop * tableScale;
+          scaled.headerBottom = t.headerBottom * tableScale;
+        }
+        return scaled;
+      });
 
       var sliceStartPx = 0;
       var firstPage = true;
       while (sliceStartPx < canvas.height - 1) {
+        // 이 페이지가 어떤 표 중간에서 이어지는 페이지면(표가 한 페이지보다 커서 어쩔 수
+        // 없이 잘린 경우), 그 표의 헤더 행을 이 페이지 맨 위에도 다시 그려서 어느 열인지
+        // 알아볼 수 있게 한다.
+        var continuingTable = findTableContaining(tablesPx, sliceStartPx);
+        var headerBandPx = (continuingTable && continuingTable.headerTop !== undefined)
+          ? continuingTable.headerBottom - continuingTable.headerTop
+          : 0;
+        var availablePx = pageHeightPx - headerBandPx;
+
         // 이 구간 안에 상품 경계(강제 개행)가 있으면, 안전분할과 무관하게 거기서 반드시
         // 끊는다 — 상품별로 항상 새 페이지에서 시작하게(내용이 남아도 다음 상품을
         // 이어붙이지 않는다).
@@ -2434,27 +2498,44 @@
         }
         var segmentEndPx = nextHardBreak !== null ? Math.min(canvas.height, nextHardBreak) : canvas.height;
 
-        var naiveEnd = sliceStartPx + pageHeightPx;
+        // 표가 이 페이지에서 시작은 되는데 안에서 잘리게 생겼고, 그 표 전체가 한 페이지
+        // 분량 안에 들어간다면(=다음 페이지에 통째로 넘기면 안 잘림), 아예 이 표 시작
+        // 전에서 이 페이지를 끝낸다 — 표는 되도록 안 잘리는 쪽을 우선한다.
+        if (!continuingTable) {
+          var nextTable = findNextTableStartAfter(tablesPx, sliceStartPx);
+          if (nextTable && nextTable.top <= segmentEndPx) {
+            var wouldEndAt = sliceStartPx + availablePx;
+            var fitsWhole = (nextTable.bottom - nextTable.top) <= pageHeightPx;
+            if (fitsWhole && nextTable.top < wouldEndAt && nextTable.bottom > wouldEndAt && nextTable.top > sliceStartPx) {
+              segmentEndPx = nextTable.top;
+            }
+          }
+        }
+
+        var naiveEnd = sliceStartPx + availablePx;
         var sliceEndPx;
         if (naiveEnd >= segmentEndPx) {
           sliceEndPx = segmentEndPx;
         } else {
-          sliceEndPx = nearestSafeOffset(safeOffsetsPx, naiveEnd, sliceStartPx + pageHeightPx * 0.5);
+          sliceEndPx = nearestSafeOffset(safeOffsetsPx, naiveEnd, sliceStartPx + availablePx * 0.5);
         }
-        if (sliceEndPx <= sliceStartPx) sliceEndPx = Math.min(segmentEndPx, sliceStartPx + pageHeightPx);
+        if (sliceEndPx <= sliceStartPx) sliceEndPx = Math.min(segmentEndPx, sliceStartPx + availablePx);
 
         var sliceHeightPx = sliceEndPx - sliceStartPx;
         var sliceCanvas = document.createElement("canvas");
         sliceCanvas.width = canvas.width;
-        sliceCanvas.height = sliceHeightPx;
+        sliceCanvas.height = sliceHeightPx + headerBandPx;
         var ctx = sliceCanvas.getContext("2d");
         ctx.fillStyle = "#ffffff";
         ctx.fillRect(0, 0, sliceCanvas.width, sliceCanvas.height);
-        ctx.drawImage(canvas, 0, sliceStartPx, canvas.width, sliceHeightPx, 0, 0, canvas.width, sliceHeightPx);
+        if (headerBandPx > 0) {
+          ctx.drawImage(canvas, 0, continuingTable.headerTop, canvas.width, headerBandPx, 0, 0, canvas.width, headerBandPx);
+        }
+        ctx.drawImage(canvas, 0, sliceStartPx, canvas.width, sliceHeightPx, 0, headerBandPx, canvas.width, sliceHeightPx);
 
         var imgData = sliceCanvas.toDataURL("image/jpeg", 0.92);
         if (!firstPage) pdf.addPage();
-        pdf.addImage(imgData, "JPEG", MARGIN_MM, MARGIN_MM, pageWidthMm, sliceHeightPx / pxPerMm);
+        pdf.addImage(imgData, "JPEG", MARGIN_MM, MARGIN_MM, pageWidthMm, sliceCanvas.height / pxPerMm);
         firstPage = false;
         sliceStartPx = sliceEndPx;
       }
