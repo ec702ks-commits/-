@@ -2333,6 +2333,21 @@
     return offsets;
   }
 
+  // 기존상품이 여러 건이면(.product-report-divided) 화면 미리보기와 마찬가지로 상품별로
+  // 항상 새 페이지에서 시작하게 한다 — collectSafePageBreakOffsets는 "잘리지만 않으면
+  // 되는" 후보일 뿐이라 페이지에 자리가 남으면 다음 상품을 이어붙일 수 있는데, 상품별로
+  // 반드시 새 페이지로 나눠 달라는 요청이 있어서 이건 예외 없이 강제로 끊는다.
+  function collectHardPageBreakOffsets(container) {
+    var containerTop = container.getBoundingClientRect().top;
+    var offsets = [];
+    Array.prototype.forEach.call(container.querySelectorAll(".product-report-divided"), function (node) {
+      var top = node.getBoundingClientRect().top - containerTop;
+      if (top > 0) offsets.push(top);
+    });
+    offsets.sort(function (a, b) { return a - b; });
+    return offsets;
+  }
+
   // safeOffsets 중에서 target을 넘지 않는 가장 큰 값을 찾는다(=target에 최대한 가깝게
   // 붙이되 카드 중간을 자르지 않는 지점). minOffset보다는 커야 한다(페이지가 안 줄어들게).
   function nearestSafeOffset(safeOffsets, target, minOffset) {
@@ -2379,10 +2394,11 @@
     Array.prototype.forEach.call(clone.querySelectorAll(".no-print"), function (n) { n.remove(); });
     document.body.appendChild(clone);
 
-    // 카드 등이 잘리지 않을 안전한 페이지 분할 지점을, 캔버스로 그리기 전(요소가 실제
-    // 레이아웃된 상태)에 미리 측정해둔다. 복제본 기준으로 측정해야 실제 캡처될 레이아웃과
-    // 일치한다.
+    // 카드 등이 잘리지 않을 안전한 페이지 분할 지점과, 상품별로 반드시 새 페이지에서
+    // 시작해야 하는 강제 분할 지점을 캔버스로 그리기 전(요소가 실제 레이아웃된 상태)에
+    // 미리 측정해둔다. 복제본 기준으로 측정해야 실제 캡처될 레이아웃과 일치한다.
     var safeOffsetsCss = collectSafePageBreakOffsets(clone);
+    var hardOffsetsCss = collectHardPageBreakOffsets(clone);
 
     html2canvas(clone, {
       scale: 2,
@@ -2404,15 +2420,28 @@
       var pxPerMm = canvas.width / pageWidthMm;
       var pageHeightPx = pageHeightMm * pxPerMm;
       var safeOffsetsPx = safeOffsetsCss.map(function (v) { return v * (canvas.width / PDF_CAPTURE_WIDTH); });
+      var hardOffsetsPx = hardOffsetsCss.map(function (v) { return v * (canvas.width / PDF_CAPTURE_WIDTH); });
 
       var sliceStartPx = 0;
       var firstPage = true;
       while (sliceStartPx < canvas.height - 1) {
+        // 이 구간 안에 상품 경계(강제 개행)가 있으면, 안전분할과 무관하게 거기서 반드시
+        // 끊는다 — 상품별로 항상 새 페이지에서 시작하게(내용이 남아도 다음 상품을
+        // 이어붙이지 않는다).
+        var nextHardBreak = null;
+        for (var hi = 0; hi < hardOffsetsPx.length; hi++) {
+          if (hardOffsetsPx[hi] > sliceStartPx) { nextHardBreak = hardOffsetsPx[hi]; break; }
+        }
+        var segmentEndPx = nextHardBreak !== null ? Math.min(canvas.height, nextHardBreak) : canvas.height;
+
         var naiveEnd = sliceStartPx + pageHeightPx;
-        var sliceEndPx = naiveEnd >= canvas.height
-          ? canvas.height
-          : nearestSafeOffset(safeOffsetsPx, naiveEnd, sliceStartPx + pageHeightPx * 0.5);
-        if (sliceEndPx <= sliceStartPx) sliceEndPx = Math.min(canvas.height, sliceStartPx + pageHeightPx);
+        var sliceEndPx;
+        if (naiveEnd >= segmentEndPx) {
+          sliceEndPx = segmentEndPx;
+        } else {
+          sliceEndPx = nearestSafeOffset(safeOffsetsPx, naiveEnd, sliceStartPx + pageHeightPx * 0.5);
+        }
+        if (sliceEndPx <= sliceStartPx) sliceEndPx = Math.min(segmentEndPx, sliceStartPx + pageHeightPx);
 
         var sliceHeightPx = sliceEndPx - sliceStartPx;
         var sliceCanvas = document.createElement("canvas");
