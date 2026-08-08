@@ -2357,25 +2357,53 @@
     el.printBtn.disabled = true;
     el.printBtn.textContent = "PDF 생성 중...";
 
-    // 카드 등이 잘리지 않을 안전한 페이지 분할 지점을, 캔버스로 그리기 전(요소가 실제
-    // 레이아웃된 상태)에 미리 측정해둔다.
-    var safeOffsetsCss = collectSafePageBreakOffsets(target);
+    // 폰 화면 폭(좁은 한 칸짜리 모바일 레이아웃) 그대로 캡처해서 A4 폭에 맞게 늘리면,
+    // 원래 좁은 폭 때문에 세로로 아주 길었던 내용이 그대로 다 늘어나서 페이지가 수십
+    // 장으로 잘게 쪼개지는 문제가 있었다(확인됨). 인쇄에 적당한 폭(A4 비율에 가까운
+    // 800px)짜리 임시 복제본을 화면 밖에 만들어 그걸 캡처하면, 데스크톱 화면처럼 좀 더
+    // 옆으로 넓게 자리잡아 실제 인쇄 페이지 수만큼만 나온다. 화면에 보이는 원본은 건드리지
+    // 않는다(사용자가 보는 화면이 순간적으로 바뀌면 안 되므로).
+    var PDF_CAPTURE_WIDTH = 800;
+    var clone = target.cloneNode(true);
+    clone.removeAttribute("id");
+    clone.style.position = "fixed";
+    clone.style.top = "0";
+    clone.style.left = "-99999px";
+    clone.style.width = PDF_CAPTURE_WIDTH + "px";
+    clone.style.maxWidth = PDF_CAPTURE_WIDTH + "px";
+    clone.style.margin = "0";
+    // .no-print(예: "결과 요약 미리보기" 제목)는 원래 @media print에서만 안 보이게
+    // 숨겨지던 요소인데, html2canvas는 인쇄 미디어를 안 거치고 화면에 보이는 그대로
+    // 캡처해서 이 요소들이 그대로 찍혀버린다(배너의 음수 마진과 겹쳐서 겉보기 이상하게
+    // 나오는 문제로 발견됨). 캡처 전에 명시적으로 지운다.
+    Array.prototype.forEach.call(clone.querySelectorAll(".no-print"), function (n) { n.remove(); });
+    document.body.appendChild(clone);
 
-    html2canvas(target, {
-      scale: Math.min(2, window.devicePixelRatio || 1.5),
+    // 카드 등이 잘리지 않을 안전한 페이지 분할 지점을, 캔버스로 그리기 전(요소가 실제
+    // 레이아웃된 상태)에 미리 측정해둔다. 복제본 기준으로 측정해야 실제 캡처될 레이아웃과
+    // 일치한다.
+    var safeOffsetsCss = collectSafePageBreakOffsets(clone);
+
+    html2canvas(clone, {
+      scale: 2,
       backgroundColor: "#ffffff",
       useCORS: true,
-      logging: false
+      logging: false,
+      windowWidth: PDF_CAPTURE_WIDTH
     }).then(function (canvas) {
+      document.body.removeChild(clone);
       var jsPDFCtor = window.jspdf.jsPDF;
       var pdf = new jsPDFCtor({ unit: "mm", format: "a4", compress: true });
-      var pageWidthMm = pdf.internal.pageSize.getWidth();
-      var pageHeightMm = pdf.internal.pageSize.getHeight();
+      var MARGIN_MM = 8;
+      var pageWidthMm = pdf.internal.pageSize.getWidth() - MARGIN_MM * 2;
+      var pageHeightMm = pdf.internal.pageSize.getHeight() - MARGIN_MM * 2;
 
-      // 캔버스 픽셀 <-> mm 환산 비율(캔버스 전체 너비가 페이지 너비에 딱 맞도록 스케일).
+      // 캔버스 픽셀 <-> mm 환산 비율(캔버스 전체 너비가 여백을 뺀 페이지 너비에 딱
+      // 맞도록 스케일). 여백 없이 0,0부터 꽉 채우면 맨 위 글자가 살짝 잘려 보이는
+      // 문제가 있어서(확인됨) 사방에 여백을 둔다.
       var pxPerMm = canvas.width / pageWidthMm;
       var pageHeightPx = pageHeightMm * pxPerMm;
-      var safeOffsetsPx = safeOffsetsCss.map(function (v) { return v * (canvas.width / target.getBoundingClientRect().width); });
+      var safeOffsetsPx = safeOffsetsCss.map(function (v) { return v * (canvas.width / PDF_CAPTURE_WIDTH); });
 
       var sliceStartPx = 0;
       var firstPage = true;
@@ -2397,13 +2425,14 @@
 
         var imgData = sliceCanvas.toDataURL("image/jpeg", 0.92);
         if (!firstPage) pdf.addPage();
-        pdf.addImage(imgData, "JPEG", 0, 0, pageWidthMm, sliceHeightPx / pxPerMm);
+        pdf.addImage(imgData, "JPEG", MARGIN_MM, MARGIN_MM, pageWidthMm, sliceHeightPx / pxPerMm);
         firstPage = false;
         sliceStartPx = sliceEndPx;
       }
 
       downloadBlob(pdf.output("blob"), getReportPdfFilename());
     }).catch(function (e) {
+      if (clone.parentNode) document.body.removeChild(clone);
       alert("PDF 생성 중 문제가 발생했습니다: " + (e && e.message ? e.message : e));
     }).then(function () {
       el.printBtn.disabled = false;
