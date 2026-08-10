@@ -2260,7 +2260,12 @@
             html += renderSheetTableHtml(sheet);
           });
         } else {
-          html += '<p class="cell-note" style="color:#5c6576;">' + escapeHtml(a.name) + ' — 상품설명서 중 중도해지 관련 문구(참고용, RM 확인 필요)</p>';
+          // 상품설명서 PDF에서 찾은 원문 문구 전체를 그대로 옮기면(회사 안내/민원 연락처
+          // 같은 무관한 문단까지 키워드 매칭으로 같이 딸려와서) 고객용 문서가 지저분해지고
+          // 분량도 길어져 페이지가 어색하게 잘리기 쉽다. 그래서 client 리포트에는 "어떤
+          // 근거로 몇 %가 적용됐는지"만 한 줄로 요약해서 남기고, 원문 발췌는 담당자가
+          // 입력 화면에서 확인하는 용도로만 쓰고 보고서에는 넣지 않는다.
+          html += '<p class="cell-note" style="color:#5c6576;">' + escapeHtml(a.name) + ' — 상품설명서(중도해지 관련 조항 확인용)</p>';
           if (a.matchedTier) {
             html += '<p class="cell-note" style="color:#5c6576;">경과기간별 적용비율표에서 "' + escapeHtml(a.matchedTier.raw) + '" 구간이 적용되어 적용이율 비율 <strong style="color:#131b2b;">' + a.matchedTier.pct + '%</strong>로 자동 설정됨</p>';
           } else if (a.matchedFlatRatio) {
@@ -2268,15 +2273,8 @@
               '"' + escapeHtml(a.matchedFlatRatio.raw) + '"에서 적용이율 비율 <strong style="color:#131b2b;">' + a.matchedFlatRatio.pct + '%</strong>로 자동 설정됨' +
               (a.flatMatchReason === "label" ? ' (상품명 일치로 자동 선택됨)' : '') + '</p>';
           } else if (a.flatRatios && a.flatRatios.length > 1) {
-            html += '<p class="cell-note" style="color:#5c6576;">고정 중도해지비율 후보 ' + a.flatRatios.length + '개 발견(상품/옵션이 여러 개라 자동 설정 안 됨) — 아래에서 확인 후 직접 입력 필요</p>';
-            html += '<pre class="pdf-snippet" style="background:#ffffff;color:#131b2b;border-color:#dde2ea;">' + escapeHtml(a.flatRatios.map(function (r2) { return (r2.productName ? '[' + r2.productName + '] ' : '') + r2.raw; }).join("\n")) + '</pre>';
+            html += '<p class="cell-note" style="color:#5c6576;">고정 중도해지비율 후보 ' + a.flatRatios.length + '개 발견(상품/옵션이 여러 개라 자동 설정되지 않아, 입력 화면에서 직접 확인 후 반영함)</p>';
           }
-          a.snippets.forEach(function (s) {
-            html += s.productName
-              ? '<p class="cell-note" style="color:#5c6576;"><strong style="color:#131b2b;">[' + escapeHtml(s.productName) + ']</strong></p>'
-              : '<p class="cell-note" style="color:#5c6576;">[공통 안내]</p>';
-            html += '<pre class="pdf-snippet" style="background:#ffffff;color:#131b2b;border-color:#dde2ea;">' + escapeHtml(s.text) + '</pre>';
-          });
         }
       });
       html += '</div>';
