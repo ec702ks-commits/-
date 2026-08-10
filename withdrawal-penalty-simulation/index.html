@@ -30,6 +30,15 @@
   <section class="card no-print" id="productsSection">
     <h2><span class="step-badge">2</span>기존상품 (여러 건이면 추가 가능)</h2>
     <p class="hint">고객이 가진 기존상품이 여러 건이면 "+ 기존상품 추가"로 늘려서, 상품별로 각각 비교하고 합계도 함께 볼 수 있습니다. 상품마다 만기일·금리·해지패널티 방식을 따로 입력합니다.</p>
+
+    <div class="product-subsection attachment-subsection">
+      <h4>해지패널티 계산 자료 첨부(선택) — 먼저 올리면 아래 상품 항목이 자동으로 채워집니다</h4>
+      <p class="hint">당사 시스템에서 나오는 해지패널티 계산 자료를 첨부하면 아래 상품 카드의 항목(적립금·날짜·금리 등)을 자동으로 인식해서 채워줍니다. 엑셀 파일(.xlsx/.xls/.csv) 또는 상품설명서 PDF를 지원하며, 여러 개(또는 여러 상품이 든 파일 하나)를 한 번에 첨부할 수 있고, 상품명이 일치하는 카드를 자동으로 찾아 반영합니다. 매칭되는 카드가 없으면 새 카드가 자동으로 추가됩니다. 파일은 서버로 전송되지 않고 이 화면 안에서만 처리됩니다. 자동으로 채워진 값은 각 카드에서 언제든 직접 수정할 수 있습니다.</p>
+      <input type="file" accept=".xlsx,.xls,.csv,.pdf" id="attachmentFileInput" multiple />
+      <div class="autofill-summary" id="autofillSummary"></div>
+      <div class="attachment-list" id="globalAttachmentList"></div>
+    </div>
+
     <div id="existingProducts"></div>
     <button type="button" id="addExistingProduct" class="btn small">+ 기존상품 추가</button>
   </section>

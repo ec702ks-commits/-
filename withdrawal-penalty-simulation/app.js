@@ -33,6 +33,7 @@
   function cacheEls() {
     [
       "customerName", "todayDate",
+      "attachmentFileInput", "autofillSummary", "globalAttachmentList",
       "existingProducts", "addExistingProduct",
       "newProductRows", "addProductRow",
       "rmName", "rmDept", "rmContact", "printBtn", "resetBtn", "reportContent", "reportSection"
@@ -275,6 +276,53 @@
     return "연복리";
   }
 
+  // 재예치 결정을 지금 당장이 아니라 미래로 미룰 경우, "유지 vs 재예치" 추천이 뒤바뀌는
+  // 시점(있다면)을 추정한다. 손익분기 "금리"(오늘 기준, 얼마 이상 금리여야 유리한지)와
+  // 짝이 되는 손익분기 "날짜"(오늘 정한 금리를 그대로 쓴다면, 언제까지는 괜찮고 언제부터
+  // 뒤바뀌는지) 개념이다.
+  //
+  // 미래 날짜의 정확한 해지적립금은 실제로는 회사 시스템의 구간별(계단식) 패널티 규정을
+  // 봐야 정확히 알 수 있어 이 화면만으로는 알 수 없다. 대신 "해지적립금이 오늘 값에서
+  // 만기 시 예상 수령액까지 경과기간에 비례해 점차 늘어난다"는 단순화한 가정으로 선형
+  // 추정한다 — 오늘(today)에서는 실제 해지적립금과 일치하고, 만기(maturity)에서는 정확히
+  // 만기 시 예상 수령액과 일치하도록 양 끝을 고정한 뒤 그 사이를 선형 보간한다. 실제
+  // 패널티는 계단식으로 줄어드는 경우가 많아 정확한 날짜라기보다는 참고용 추정치이며,
+  // 이 사실은 화면/보고서에 함께 안내한다.
+  function estimateRecommendationFlipDate(today, maturity, cancelToday, holdAmountForCompare, ratePct, method) {
+    if (!today || !maturity || cancelToday === null || cancelToday === undefined || cancelToday <= 0) return null;
+    if (holdAmountForCompare === null || holdAmountForCompare === undefined || holdAmountForCompare <= 0) return null;
+    if (ratePct === null || ratePct === undefined || isNaN(ratePct)) return null;
+    var totalDays = (maturity.getTime() - today.getTime()) / 86400000;
+    if (totalDays <= 1) return null;
+
+    var rr = ratePct / 100;
+    function diffAtDate(d) {
+      var elapsedDays = (d.getTime() - today.getTime()) / 86400000;
+      var frac = Math.max(0, Math.min(1, elapsedDays / totalDays));
+      var cancelAtD = cancelToday + (holdAmountForCompare - cancelToday) * frac;
+      var yrsToMaturity = Math.max(0, actYearsBetween(d, maturity));
+      var reinvestVal = cancelAtD * growthFactor(method, rr, yrsToMaturity);
+      return reinvestVal - holdAmountForCompare;
+    }
+
+    var initialDiff = diffAtDate(today);
+    if (initialDiff === 0) return null;
+    var initialBetter = initialDiff > 0; // true=오늘 기준 재예치가 유리
+
+    // 하루 단위로 스캔해서 부호(유·불리)가 처음 바뀌는 날짜를 찾는다. 기간이 보통
+    // 수년 이내라 하루 단위 스캔도 계산량이 크지 않다(수천 회 이내). 혹시 모를 과도하게
+    // 긴 기간에 대비해 스캔 간격을 조금 넓히는 안전장치만 둔다.
+    var stepDays = totalDays > 3650 ? Math.ceil(totalDays / 3650) : 1;
+    for (var day = stepDays; day < totalDays; day += stepDays) {
+      var d = new Date(today.getTime() + day * 86400000);
+      var better = diffAtDate(d) > 0;
+      if (better !== initialBetter) {
+        return { date: d, initialBetter: initialBetter };
+      }
+    }
+    return null; // 만기 전까지는 뒤바뀌지 않을 것으로 추정됨
+  }
+
   // 명세일자 이후 실제 인출 이력을 반영해 "오늘 기준 실제 잔액"을 재구성한다.
   // 보수적으로 인출액은 항상 원금에서 먼저 차감된 것으로 간주한다(=남는 순원금이
   // 작아지고, 그만큼 이자 비중이 커져서 중도해지 패널티 계산 시 더 낮은 금액이 나온다).
@@ -425,14 +473,6 @@
         '<button type="button" class="btn small danger" data-action="delete-product">삭제</button>' +
       '</div>' +
 
-      '<div class="product-subsection attachment-subsection">' +
-        '<h4>해지패널티 계산 자료 첨부(선택) — 먼저 올리면 아래 항목이 자동으로 채워집니다</h4>' +
-        '<p class="hint">당사 시스템에서 나오는 해지패널티 계산 자료를 첨부하면 아래 계산기 항목(적립금·날짜·금리 등)을 자동으로 인식해서 채워줍니다. 엑셀 파일(.xlsx/.xls/.csv) 또는 상품설명서 PDF를 지원하며, 여러 개 첨부할 수 있습니다. 파일은 서버로 전송되지 않고 이 화면 안에서만 처리됩니다. 자동으로 채워진 값은 아래에서 언제든 직접 수정할 수 있습니다.</p>' +
-        '<input type="file" accept=".xlsx,.xls,.csv,.pdf" data-field="attachmentFile" multiple />' +
-        '<div class="autofill-summary" data-role="autofillSummary"></div>' +
-        '<div class="attachment-list" data-role="attachmentList"></div>' +
-      '</div>' +
-
       '<div class="mapping-grid">' +
         '<label>현재 적립금(원)<input type="text" data-field="principal" placeholder="예: 100,000,000" /></label>' +
         '<label>납입원금(선택 — 알고 있으면 해지패널티 계산이 더 정확해집니다. 모르면 비워두세요)<input type="text" data-field="contributionPrincipal" /></label>' +
@@ -570,9 +610,6 @@
     refs.ratioModeCalcEl = wrap.querySelector('[data-role="ratioModeCalc"]');
     refs.directModeFutureNoteEl = wrap.querySelector('[data-role="directModeFutureNote"]');
     refs.cancelAmountResultEl = wrap.querySelector('[data-role="cancelAmountResult"]');
-    refs.attachmentFileInput = wrap.querySelector('[data-field="attachmentFile"]');
-    refs.attachmentListEl = wrap.querySelector('[data-role="attachmentList"]');
-    refs.autofillSummaryEl = wrap.querySelector('[data-role="autofillSummary"]');
 
     bindDateMask(refs.startDateInput, refs.maturityDateInput);
     bindDateMask(refs.maturityDateInput, null);
@@ -634,15 +671,41 @@
       renderReport();
     });
 
-    refs.attachmentFileInput.addEventListener("change", function () {
-      var files = refs.attachmentFileInput.files ? Array.prototype.slice.call(refs.attachmentFileInput.files) : [];
-      refs.attachmentFileInput.value = "";
+    renderProductWithdrawalRows(p);
+  }
+
+  // ---------- 해지패널티 계산 자료 첨부 : 상품카드 위 공용 영역(전체 공통) ----------
+  // 예전에는 상품카드마다 첨부 입력칸이 하나씩 있었는데, 카드가 여러 개면 똑같은
+  // 안내문/입력칸이 그만큼 반복돼서 보기 나쁘고 "어느 칸에 올려야 하는지" 헷갈린다는
+  // 피드백이 있었다. 이제는 상품카드 목록 위에 딱 하나만 두고, 업로드된 파일 내용을
+  // 보고(상품명·명세일자 매칭) 알맞은 카드로 자동 배분한다 — 이미 있던 "카드 자동 매칭/
+  // 새 카드 자동 추가" 로직은 그대로 재사용하고, "지금 입력 중인 이 카드"라는 개념만 없앴다.
+
+  // 상품명·적립금·명세일자가 전부 비어 있는(=아직 아무것도 입력 안 한) 카드를 찾는다.
+  // 표/라벨 형식 자료에서 "매칭되는 기존 카드가 없는 첫 항목"을 채울 자리로 쓴다.
+  function isProductBlank(prod) {
+    return normalizeLabelText(prod.refs.labelInput.value) === "" &&
+      !parseAmountStr(prod.refs.principalInput.value) &&
+      !prod.refs.startDateInput.value;
+  }
+
+  function pickBlankTargetProduct() {
+    var found = null;
+    state.products.some(function (prod) {
+      if (isProductBlank(prod)) { found = prod; return true; }
+      return false;
+    });
+    return found;
+  }
+
+  function bindSharedAttachmentInput() {
+    el.attachmentFileInput.addEventListener("change", function () {
+      var files = el.attachmentFileInput.files ? Array.prototype.slice.call(el.attachmentFileInput.files) : [];
+      el.attachmentFileInput.value = "";
       if (!files.length) return;
 
       // 명세엑셀 + 해지패널티엑셀 + 상품설명서 PDF처럼 여러 파일을 한 번에 선택해도
-      // 순서대로 하나씩 처리한다 — 카드 병합 로직이 "이 카드에 이미 어떤 상품이
-      // 들어있는지"를 참고하므로, 동시에 처리하면 서로의 결과를 못 보고 카드가
-      // 중복 생성될 수 있다. 처리 순서도 중요하다: 상품설명서(PDF)는 상품명이 이미
+      // 순서대로 하나씩 처리한다. 처리 순서도 중요하다: 상품설명서(PDF)는 상품명이 이미
       // 카드에 채워져 있어야 어느 카드에 적용할지 매칭할 수 있는데, 파일 선택 창에서
       // 고른 순서가 항상 "엑셀 먼저"라는 보장이 없다(운영체제/선택 방식에 따라
       // 뒤바뀔 수 있음). 그래서 실제 선택 순서와 무관하게 항상 엑셀/CSV(상품명 등을
@@ -664,215 +727,192 @@
       }
       processNextQueuedFile();
     });
+  }
 
-    function processOneAttachmentFile(file, done) {
-      if (/\.(xlsx|xls|csv)$/i.test(file.name)) {
-        if (typeof XLSX === "undefined") {
-          alert("엑셀을 읽는 기능을 불러오지 못했습니다. 페이지를 새로고침한 뒤 다시 시도해주세요.");
+  function processOneAttachmentFile(file, done) {
+    if (/\.(xlsx|xls|csv)$/i.test(file.name)) {
+      if (typeof XLSX === "undefined") {
+        alert("엑셀을 읽는 기능을 불러오지 못했습니다. 페이지를 새로고침한 뒤 다시 시도해주세요.");
+        done();
+        return;
+      }
+      parseSpreadsheetFile(file, function (err, sheets) {
+        if (err || !sheets || !sheets.length) {
+          alert("이 파일을 열 수 없습니다. 비밀번호가 걸려 있거나 지원하지 않는 형식일 수 있습니다.");
           done();
           return;
         }
-        parseSpreadsheetFile(file, function (err, sheets) {
-          if (err || !sheets || !sheets.length) {
-            alert("이 파일을 열 수 없습니다. 비밀번호가 걸려 있거나 지원하지 않는 형식일 수 있습니다.");
-            done();
-            return;
-          }
 
-          // 1) "헤더 한 줄 + 상품별 데이터행" 표 형식 먼저 시도(당사 시스템 다건 조회 자료 등).
-          //    행이 여러 개면, 상품명+명세일자가 이미 있는 카드와 같은 행은 그 기존 카드에
-          //    합쳐 넣는다(같은 상품을 "상품운용현황"과 "해지패널티 계산자료" 두 파일로
-          //    나눠 올려도 카드가 쪼개지지 않도록). 나머지는 새 상품카드를 자동으로 추가해
-          //    채운다. 이 카드(p)가 이미 다른 상품으로 채워져 있으면, 매칭되지 않는 행으로
-          //    그 내용을 덮어쓰지 않는다 — p가 비어 있을 때만 첫 매칭 없는 행을 채우는 용도로 쓴다.
-          var tableRecords = extractTableRecordsFromSheets(sheets);
-          if (tableRecords.length) {
-            var pIsBlank = normalizeLabelText(refs.labelInput.value) === "";
-            var pUsedForTable = false;
-            var targets = tableRecords.map(function (rec) {
-              var existing = findMatchingProductForRecord(rec);
-              var targetProduct;
-              if (existing) {
-                targetProduct = existing;
-              } else if (pIsBlank && !pUsedForTable) {
-                targetProduct = p;
-                pUsedForTable = true;
+        // 1) "헤더 한 줄 + 상품별 데이터행" 표 형식 먼저 시도(당사 시스템 다건 조회 자료 등).
+        //    행이 여러 개면, 상품명+명세일자가 이미 있는 카드와 같은 행은 그 기존 카드에
+        //    합쳐 넣는다(같은 상품을 "상품운용현황"과 "해지패널티 계산자료" 두 파일로
+        //    나눠 올려도 카드가 쪼개지지 않도록). 매칭되는 카드가 없는 항목은, 아직 아무것도
+        //    입력 안 한 빈 카드가 있으면 그 카드부터 채우고(처음 한 번만), 그다음부터는
+        //    새 상품카드를 자동으로 추가해 채운다.
+        var tableRecords = extractTableRecordsFromSheets(sheets);
+        if (tableRecords.length) {
+          var usedBlank = false;
+          var targets = tableRecords.map(function (rec) {
+            var existing = findMatchingProductForRecord(rec);
+            var targetProduct;
+            if (existing) {
+              targetProduct = existing;
+            } else {
+              var blank = !usedBlank ? pickBlankTargetProduct() : null;
+              if (blank) {
+                targetProduct = blank;
+                usedBlank = true;
               } else {
                 targetProduct = addProduct();
               }
-              var applied = applyTableRecordToProduct(targetProduct, rec);
-              updateProductPenaltyModeUI(targetProduct);
-              return { product: targetProduct, applied: applied, merged: !!existing };
-            });
-
-            // 첨부파일 자체는 항상 업로드한 이 카드(p)에 기록해서, 이 카드에서 첨부 목록이
-            // 계속 쌓이는 걸 볼 수 있게 한다 — 실제 값이 다른 카드로 갔더라도 마찬가지.
-            var pTarget = targets.filter(function (t) { return t.product === p; })[0];
-            p.attachments.push({ id: state.nextId++, kind: "excel", name: file.name, sheets: sheets, appliedFields: pTarget ? pTarget.applied : [] });
-            renderProductAttachments(p);
-
-            targets.forEach(function (t, idx) {
-              renderAutofillSummary(t.product, t.applied, file.name, targets.length, idx, t.merged);
-            });
-
-            if (!pTarget && p.refs.autofillSummaryEl) {
-              var otherLabels = targets.map(function (t) { return t.product.refs.labelInput.value; }).filter(Boolean).join(", ");
-              p.refs.autofillSummaryEl.innerHTML =
-                '<div class="autofill-note autofill-ok"><p><strong>"' + escapeHtml(file.name) + '"에서 인식한 상품(' + escapeHtml(otherLabels) + ')이 이 카드와는 달라서, 기존/새 카드로 나눠 반영했습니다.</strong> 이 카드의 내용은 바뀌지 않았습니다.</p></div>';
             }
-            updateProductChrome();
-            renderReport();
-            done();
-            return;
-          }
+            var applied = applyTableRecordToProduct(targetProduct, rec);
+            updateProductPenaltyModeUI(targetProduct);
+            targetProduct.attachments.push({ id: state.nextId++, kind: "excel", name: file.name, sheets: sheets, appliedFields: applied });
+            return { product: targetProduct, applied: applied, merged: !!existing };
+          });
 
-          // 2) 표 형식이 아니면 "라벨: 값" 형식으로 시도(타사 상품 캡처 자료 등).
-          var extracted = extractFieldsFromSheets(sheets);
-          var applied = applyExtractedFields(p, extracted);
-          p.attachments.push({ id: state.nextId++, kind: "excel", name: file.name, sheets: sheets, appliedFields: applied });
-          renderProductAttachments(p);
-          renderAutofillSummary(p, applied, file.name);
-          updateProductPenaltyModeUI(p);
+          renderAutofillSummaryForTargets(file.name, targets);
+          updateProductChrome();
           renderReport();
-          done();
-        });
-        return;
-      }
-
-      if (/\.pdf$/i.test(file.name)) {
-        if (typeof pdfjsLib === "undefined") {
-          alert("PDF를 읽는 기능을 불러오지 못했습니다. 페이지를 새로고침한 뒤 다시 시도해주세요.");
           done();
           return;
         }
-        extractPdfPenaltyClauses(file, function (err, result) {
-          if (err) {
-            alert("이 PDF를 열 수 없습니다. 비밀번호가 걸려 있거나 지원하지 않는 형식일 수 있습니다.");
-            done();
-            return;
+
+        // 2) 표 형식이 아니면 "라벨: 값" 형식으로 시도(타사 상품 캡처 자료 등).
+        //    아직 아무것도 입력 안 한 빈 카드가 있으면 그 카드에, 없으면 새 카드를 추가해 채운다.
+        var extracted = extractFieldsFromSheets(sheets);
+        var target = pickBlankTargetProduct() || addProduct();
+        var applied = applyExtractedFields(target, extracted);
+        target.attachments.push({ id: state.nextId++, kind: "excel", name: file.name, sheets: sheets, appliedFields: applied });
+        updateProductPenaltyModeUI(target);
+        renderAutofillSummaryForTargets(file.name, [{ product: target, applied: applied, merged: false }]);
+        updateProductChrome();
+        renderReport();
+        done();
+      });
+      return;
+    }
+
+    if (/\.pdf$/i.test(file.name)) {
+      if (typeof pdfjsLib === "undefined") {
+        alert("PDF를 읽는 기능을 불러오지 못했습니다. 페이지를 새로고침한 뒤 다시 시도해주세요.");
+        done();
+        return;
+      }
+      extractPdfPenaltyClauses(file, function (err, result) {
+        if (err) {
+          alert("이 PDF를 열 수 없습니다. 비밀번호가 걸려 있거나 지원하지 않는 형식일 수 있습니다.");
+          done();
+          return;
+        }
+
+        // 상품설명서 PDF는 보통 단체 전체에 공통으로 쓰는 자료라, 화면에 있는 모든
+        // 상품카드를 훑어서 상품명이 (정확히 또는 유일하게) 일치하는 카드마다 자동으로
+        // 적용한다. 그래야 "삼성화재" 명세가 여러 건이어도 PDF를 한 번만 올리면 전부
+        // 반영된다. 안전을 위해, 카드가 여러 개와 겹치거나 상품명이 비어 있으면 그
+        // 카드는 건너뛰고 자동 적용하지 않는다.
+        var appliedResults = [];
+        state.products.forEach(function (prod) {
+          var c = gatherProductCustomer(prod);
+          var matchedTier = null;
+          var elapsedMonths = null;
+          if (result.breakpoints && result.breakpoints.length && c.elapsedYears !== null) {
+            elapsedMonths = Math.max(0, c.elapsedYears) * 12;
+            var hasTags = result.breakpoints.some(function (b) { return b.productName; });
+            var applicableBreakpoints = !hasTags ? result.breakpoints : result.breakpoints.filter(function (b) {
+              return !b.productName || labelMatchesCandidateName(prod.refs.labelInput.value, b.productName, true);
+            });
+            matchedTier = matchPenaltyTier(applicableBreakpoints, elapsedMonths);
           }
 
-          // 상품설명서 PDF는 보통 단체 전체에 공통으로 쓰는 자료라, 이 카드 하나에만
-          // 적용하지 않고 화면에 있는 모든 상품카드를 훑어서 상품명이 (정확히 또는
-          // 유일하게) 일치하는 카드마다 자동으로 적용한다. 그래야 "삼성화재" 명세가
-          // 여러 건이어도 PDF를 한 번만 올리면 전부 반영된다. 안전을 위해, 카드가
-          // 여러 개와 겹치거나 상품명이 비어 있으면 그 카드는 건너뛰고 자동 적용하지 않는다.
-          var appliedResults = [];
-          state.products.forEach(function (prod) {
-            var c = gatherProductCustomer(prod);
-            var matchedTier = null;
-            var elapsedMonths = null;
-            if (result.breakpoints && result.breakpoints.length && c.elapsedYears !== null) {
-              elapsedMonths = Math.max(0, c.elapsedYears) * 12;
-              var hasTags = result.breakpoints.some(function (b) { return b.productName; });
-              var applicableBreakpoints = !hasTags ? result.breakpoints : result.breakpoints.filter(function (b) {
-                return !b.productName || labelMatchesCandidateName(prod.refs.labelInput.value, b.productName, true);
-              });
-              matchedTier = matchPenaltyTier(applicableBreakpoints, elapsedMonths);
-            }
-
-            var matchedFlatRatio = null;
-            var flatMatchReason = null;
-            if (!matchedTier && result.flatRatios && result.flatRatios.length) {
-              var flatPcts = distinctFlatPcts(result.flatRatios);
-              if (flatPcts.length === 1) {
-                matchedFlatRatio = result.flatRatios[0];
-                flatMatchReason = "unique";
-              } else {
-                var picked = pickUniqueCandidateForLabel(prod.refs.labelInput.value, result.flatRatios);
-                if (picked) {
-                  matchedFlatRatio = picked;
-                  flatMatchReason = "label";
-                }
+          var matchedFlatRatio = null;
+          var flatMatchReason = null;
+          if (!matchedTier && result.flatRatios && result.flatRatios.length) {
+            var flatPcts = distinctFlatPcts(result.flatRatios);
+            if (flatPcts.length === 1) {
+              matchedFlatRatio = result.flatRatios[0];
+              flatMatchReason = "unique";
+            } else {
+              var picked = pickUniqueCandidateForLabel(prod.refs.labelInput.value, result.flatRatios);
+              if (picked) {
+                matchedFlatRatio = picked;
+                flatMatchReason = "label";
               }
             }
+          }
 
-            if (!matchedTier && !matchedFlatRatio) return;
+          if (!matchedTier && !matchedFlatRatio) return;
 
-            prod.refs.penaltyModeRatio.checked = true;
-            updateProductPenaltyModeUI(prod);
-            prod.refs.appliedRatePctInput.value = matchedTier ? matchedTier.pct : matchedFlatRatio.pct;
+          prod.refs.penaltyModeRatio.checked = true;
+          updateProductPenaltyModeUI(prod);
+          prod.refs.appliedRatePctInput.value = matchedTier ? matchedTier.pct : matchedFlatRatio.pct;
 
-            prod.attachments.push({
-              id: state.nextId++, kind: "pdf", name: file.name,
-              snippets: prod === p ? result.snippets : [],
-              pageCount: result.pageCount, breakpoints: result.breakpoints, matchedTier: matchedTier,
-              flatRatios: result.flatRatios, matchedFlatRatio: matchedFlatRatio, flatMatchReason: flatMatchReason
-            });
-            renderProductAttachments(prod);
-            appliedResults.push({ product: prod, matchedTier: matchedTier, matchedFlatRatio: matchedFlatRatio, flatMatchReason: flatMatchReason, elapsedMonths: elapsedMonths });
+          prod.attachments.push({
+            id: state.nextId++, kind: "pdf", name: file.name,
+            snippets: result.snippets,
+            pageCount: result.pageCount, breakpoints: result.breakpoints, matchedTier: matchedTier,
+            flatRatios: result.flatRatios, matchedFlatRatio: matchedFlatRatio, flatMatchReason: flatMatchReason
           });
+          appliedResults.push({ product: prod, matchedTier: matchedTier, matchedFlatRatio: matchedFlatRatio, flatMatchReason: flatMatchReason, elapsedMonths: elapsedMonths });
+        });
 
-          var ownResult = appliedResults.filter(function (a) { return a.product === p; })[0];
-          if (!ownResult) {
-            // p 자신은 매칭되지 않았으면(상품명이 없거나 PDF 상품명과 안 맞으면), 첨부
-            // 자체는 기록해서 첨부 목록/원문 스니펫은 볼 수 있게 한다(매칭 안 됨 = 값 채움 없음).
-            p.attachments.push({
+        if (!appliedResults.length) {
+          // 어느 카드에도 자동 매칭되지 않으면, 아직 아무것도 입력 안 한 빈 카드가
+          // 있으면 그 카드에(없으면 첫 번째 카드에) 원문 스니펫만 기록해서 참고할 수
+          // 있게 한다(값 자동 채움은 없음).
+          var fallbackTarget = pickBlankTargetProduct() || state.products[0];
+          if (fallbackTarget) {
+            fallbackTarget.attachments.push({
               id: state.nextId++, kind: "pdf", name: file.name, snippets: result.snippets,
               pageCount: result.pageCount, breakpoints: result.breakpoints, matchedTier: null,
               flatRatios: result.flatRatios, matchedFlatRatio: null, flatMatchReason: null
             });
-            renderProductAttachments(p);
           }
-          renderPdfSnippetsSummary(p, result, file.name,
-            ownResult ? ownResult.matchedTier : null,
-            ownResult ? ownResult.elapsedMonths : null,
-            ownResult ? ownResult.matchedFlatRatio : null,
-            ownResult ? ownResult.flatMatchReason : null);
+        }
 
-          var otherApplied = appliedResults.filter(function (a) { return a.product !== p; });
-          if (otherApplied.length && p.refs.autofillSummaryEl) {
-            var otherListHtml = otherApplied.map(function (a) {
-              var pct = a.matchedTier ? a.matchedTier.pct : a.matchedFlatRatio.pct;
-              return "<li>" + escapeHtml(a.product.refs.labelInput.value || "(상품명 없음)") + " → " + pct + "%</li>";
-            }).join("");
-            var otherNoteHtml =
-              '<div class="autofill-note autofill-ok">' +
-                "<p><strong>같은 상품설명서를 상품명이 일치하는 다른 카드 " + otherApplied.length + "개에도 자동으로 적용했습니다:</strong></p>" +
-                "<ul>" + otherListHtml + "</ul>" +
-              "</div>";
-            p.refs.autofillSummaryEl.innerHTML = otherNoteHtml + p.refs.autofillSummaryEl.innerHTML;
-          }
-
-          renderReport();
-          done();
-        });
-        return;
-      }
-
-      alert("엑셀 파일(.xlsx/.xls/.csv) 또는 PDF만 첨부할 수 있습니다.");
-      done();
+        renderPdfSnippetsSummaryGlobal(result, file.name, appliedResults);
+        renderReport();
+        done();
+      });
+      return;
     }
 
-    renderProductWithdrawalRows(p);
-    renderProductAttachments(p);
+    alert("엑셀 파일(.xlsx/.xls/.csv) 또는 PDF만 첨부할 수 있습니다.");
+    done();
   }
 
-  function renderProductAttachments(p) {
-    var container = p.refs.attachmentListEl;
+  // 상품카드 위 공용 첨부 목록: 모든 카드에 붙은 첨부파일을 "어느 카드에 붙었는지"와
+  // 함께 한 곳에 모아 보여준다(카드마다 따로 목록을 두지 않음).
+  function renderGlobalAttachmentList() {
+    var container = el.globalAttachmentList;
+    if (!container) return;
     container.innerHTML = "";
-    p.attachments.forEach(function (a) {
-      var row = document.createElement("div");
-      row.className = "attachment-row";
-      var thumbHtml = a.kind === "excel"
-        ? '<span class="attachment-thumb attachment-thumb-excel">표</span>'
-        : '<span class="attachment-thumb attachment-thumb-pdf">PDF</span>';
-      var appliedCount = (a.appliedFields && a.appliedFields.length) || 0;
-      var nameHtml = a.kind === "excel"
-        ? escapeHtml(a.name) + '<span class="attachment-meta">' + a.sheets.length + '개 시트 · ' + a.sheets.reduce(function (s, sh) { return s + sh.rows.length; }, 0) + '행 인식됨' +
-          (appliedCount ? ' · ' + appliedCount + '개 항목 자동입력됨' : '') + '</span>'
-        : escapeHtml(a.name) + '<span class="attachment-meta">' + a.pageCount + '쪽 중 중도해지 관련 문구 ' + a.snippets.length + '건 찾음' +
-          (a.matchedTier ? ' · 적용이율 비율 ' + a.matchedTier.pct + '% 자동설정됨' : '') + '</span>';
-      row.innerHTML = thumbHtml +
-        '<span class="attachment-name">' + nameHtml + '</span>' +
-        '<button type="button" class="btn small danger" data-action="delete">삭제</button>';
-      row.querySelector('[data-action="delete"]').addEventListener("click", function () {
-        p.attachments = p.attachments.filter(function (x) { return x.id !== a.id; });
-        renderProductAttachments(p);
-        if (!p.attachments.length && p.refs.autofillSummaryEl) p.refs.autofillSummaryEl.innerHTML = "";
-        renderReport();
+    state.products.forEach(function (p, index) {
+      var cardLabel = "기존상품 " + (index + 1) + (p.refs.labelInput.value ? "(" + p.refs.labelInput.value + ")" : "");
+      p.attachments.forEach(function (a) {
+        var row = document.createElement("div");
+        row.className = "attachment-row";
+        var thumbHtml = a.kind === "excel"
+          ? '<span class="attachment-thumb attachment-thumb-excel">표</span>'
+          : '<span class="attachment-thumb attachment-thumb-pdf">PDF</span>';
+        var appliedCount = (a.appliedFields && a.appliedFields.length) || 0;
+        var pctNote = a.matchedTier ? (' · 적용이율 비율 ' + a.matchedTier.pct + '% 자동설정됨')
+          : (a.matchedFlatRatio ? (' · 적용이율 비율 ' + a.matchedFlatRatio.pct + '% 자동설정됨') : '');
+        var nameHtml = a.kind === "excel"
+          ? escapeHtml(a.name) + '<span class="attachment-meta">' + escapeHtml(cardLabel) + ' · ' + a.sheets.length + '개 시트 · ' + a.sheets.reduce(function (s, sh) { return s + sh.rows.length; }, 0) + '행 인식됨' +
+            (appliedCount ? ' · ' + appliedCount + '개 항목 자동입력됨' : '') + '</span>'
+          : escapeHtml(a.name) + '<span class="attachment-meta">' + escapeHtml(cardLabel) + ' · ' + a.pageCount + '쪽 중 중도해지 관련 문구 ' + a.snippets.length + '건 찾음' + pctNote + '</span>';
+        row.innerHTML = thumbHtml +
+          '<span class="attachment-name">' + nameHtml + '</span>' +
+          '<button type="button" class="btn small danger" data-action="delete">삭제</button>';
+        row.querySelector('[data-action="delete"]').addEventListener("click", function () {
+          p.attachments = p.attachments.filter(function (x) { return x.id !== a.id; });
+          renderGlobalAttachmentList();
+          renderReport();
+        });
+        container.appendChild(row);
       });
-      container.appendChild(row);
     });
   }
 
@@ -1251,63 +1291,73 @@
     return applied;
   }
 
-  function renderAutofillSummary(p, applied, fileName, totalRecords, recordIndex, merged) {
-    var box = p.refs.autofillSummaryEl;
-    if (!box) return;
-    var multiNote = "";
-    if (totalRecords && totalRecords > 1) {
-      multiNote = '<p class="autofill-multi-note">이 파일에서 상품 정보 ' + totalRecords + '건을 인식했습니다' +
-        (recordIndex !== undefined && recordIndex !== null ? ' (이 카드는 그 중 ' + (recordIndex + 1) + '번째 항목' + (merged ? ", 기존 카드와 병합됨" : "") + ')' : '') + '.</p>';
-    } else if (merged) {
-      multiNote = '<p class="autofill-multi-note">기존에 입력되어 있던 같은 상품 카드와 병합되었습니다(중복 카드를 만들지 않음).</p>';
-    }
-    if (!applied || !applied.length) {
-      box.innerHTML = multiNote +
-        '<div class="autofill-note autofill-none">"' + escapeHtml(fileName) + '"에서 자동으로 인식된 항목이 없습니다. 아래 항목을 직접 입력해주세요.</div>';
+  // 표/라벨 형식 자료 하나가 여러 카드(targets)에 나뉘어 반영됐을 수 있으므로,
+  // 카드마다 결과를 나눠 보여주지 않고 "어느 카드에 무엇이 채워졌는지"를 한 번에
+  // 모아 공용 첨부 영역 하나에 보여준다.
+  function renderAutofillSummaryForTargets(fileName, targets) {
+    var box = el.autofillSummary;
+    if (!box || !targets || !targets.length) return;
+
+    if (targets.length === 1 && (!targets[0].applied || !targets[0].applied.length)) {
+      box.innerHTML = '<div class="autofill-note autofill-none">"' + escapeHtml(fileName) + '"에서 자동으로 인식된 항목이 없습니다. 아래 상품 카드에서 직접 입력해주세요.</div>';
       return;
     }
-    var itemsHtml = applied.map(function (a) {
-      return '<li><strong>' + escapeHtml(a.label) + '</strong> → ' + escapeHtml(String(a.display)) + '</li>';
+
+    var multiNote = targets.length > 1
+      ? '<p class="autofill-multi-note">이 파일에서 상품 정보 ' + targets.length + '건을 인식해서 카드별로 반영했습니다.</p>'
+      : "";
+
+    var sectionsHtml = targets.map(function (t) {
+      var cardIdx = state.products.indexOf(t.product);
+      var cardLabel = "기존상품 " + (cardIdx + 1) + (t.product.refs.labelInput.value ? "(" + t.product.refs.labelInput.value + ")" : "");
+      var mergedNote = t.merged ? ' <span class="cell-note">(기존 카드와 병합됨)</span>' : "";
+      if (!t.applied || !t.applied.length) {
+        return '<div class="autofill-target"><p><strong>' + escapeHtml(cardLabel) + '</strong>' + mergedNote + '</p><p class="cell-note">자동 인식된 항목 없음</p></div>';
+      }
+      var itemsHtml = t.applied.map(function (a) {
+        return '<li><strong>' + escapeHtml(a.label) + '</strong> → ' + escapeHtml(String(a.display)) + '</li>';
+      }).join("");
+      return '<div class="autofill-target"><p><strong>' + escapeHtml(cardLabel) + '</strong>' + mergedNote + '</p><ul>' + itemsHtml + '</ul></div>';
     }).join("");
+
     box.innerHTML = multiNote +
       '<div class="autofill-note autofill-ok">' +
-        '<p><strong>"' + escapeHtml(fileName) + '"에서 ' + applied.length + '개 항목을 자동으로 채웠습니다.</strong> 아래에서 값을 확인하고, 필요하면 직접 수정하세요.</p>' +
-        '<ul>' + itemsHtml + '</ul>' +
+        '<p><strong>"' + escapeHtml(fileName) + '"에서 항목을 자동으로 채웠습니다.</strong> 아래 각 상품 카드에서 값을 확인하고, 필요하면 직접 수정하세요.</p>' +
+        sectionsHtml +
       '</div>';
   }
 
   // PDF는 값을 계산기에 자동으로 채우지 않고, 찾은 문구만 그대로 보여준다(직접 확인 후 입력).
-  function renderPdfSnippetsSummary(p, result, fileName, matchedTier, elapsedMonths, matchedFlatRatio, flatMatchReason) {
-    var box = p.refs.autofillSummaryEl;
+  // 여러 카드에 자동 매칭된 경우, 카드별 매칭 결과를 한 번에 모아 보여준다.
+  function renderPdfSnippetsSummaryGlobal(result, fileName, appliedResults) {
+    var box = el.autofillSummary;
     if (!box) return;
     var snippets = result.snippets;
     var breakpoints = result.breakpoints;
     var flatRatios = result.flatRatios;
 
     var tierHtml = "";
-    if (matchedTier) {
+    if (appliedResults && appliedResults.length) {
+      var itemsHtml = appliedResults.map(function (a) {
+        var cardIdx = state.products.indexOf(a.product);
+        var cardLabel = "기존상품 " + (cardIdx + 1) + (a.product.refs.labelInput.value ? "(" + a.product.refs.labelInput.value + ")" : "");
+        var pct = a.matchedTier ? a.matchedTier.pct : a.matchedFlatRatio.pct;
+        var reasonText = a.matchedTier
+          ? ("경과기간 약 " + formatYears(a.elapsedMonths / 12) + " 구간 매칭")
+          : (a.flatMatchReason === "label" ? "상품명 일치로 매칭" : "경과기간 구분 없는 고정 중도해지비율(공통)");
+        return '<li><strong>' + escapeHtml(cardLabel) + '</strong> → 적용이율 비율 <strong>' + pct + '%</strong> 자동 설정 (' + reasonText + ')</li>';
+      }).join("");
       tierHtml =
         '<div class="autofill-note autofill-ok">' +
-          '<p><strong>경과기간별 적용비율표를 찾아서 자동으로 설정했습니다.</strong></p>' +
-          '<p>현재 경과기간 약 ' + formatYears(elapsedMonths / 12) + '(' + Math.round(elapsedMonths) + '개월) → "' + escapeHtml(matchedTier.raw) + '" 구간 적용 → 적용이율 비율 <strong>' + matchedTier.pct + '%</strong>로 설정</p>' +
-          (breakpoints.length > 1 ? '<pre class="pdf-snippet">' + escapeHtml(breakpoints.map(function (b) { return b.raw; }).join("\n")) + '</pre>' : "") +
-          '<p class="cell-note">자동으로 채운 값이니 아래 "적용이율 비율" 칸에서 다시 한 번 확인해주세요.</p>' +
+          '<p><strong>경과기간별 적용비율표(또는 고정 중도해지비율)를 찾아서 상품명이 일치하는 카드 ' + appliedResults.length + '개에 자동으로 적용했습니다.</strong></p>' +
+          '<ul>' + itemsHtml + '</ul>' +
+          '<p class="cell-note">자동으로 채운 값이니 각 카드의 "적용이율 비율" 칸에서 다시 한 번 확인해주세요.</p>' +
         '</div>';
     } else if (breakpoints && breakpoints.length) {
       tierHtml =
         '<div class="autofill-note pdf-found">' +
-          '<p><strong>경과기간별 적용비율표를 찾았지만, 현재 경과기간에 자동으로 매칭하지 못했습니다.</strong> 아래 표를 보고 직접 "적용이율 비율" 칸에 입력해주세요.</p>' +
+          '<p><strong>경과기간별 적용비율표를 찾았지만, 어느 카드에도 자동으로 매칭하지 못했습니다.</strong> 아래 표를 보고 해당 카드의 "적용이율 비율" 칸에 직접 입력해주세요.</p>' +
           '<pre class="pdf-snippet">' + escapeHtml(breakpoints.map(function (b) { return b.raw; }).join("\n")) + '</pre>' +
-        '</div>';
-    } else if (matchedFlatRatio) {
-      var matchReasonText = flatMatchReason === "label"
-        ? "이 카드의 상품명(\"" + escapeHtml(p.refs.labelInput.value) + "\")과 PDF 안의 상품명이 일치하는 항목을 찾아 자동으로 설정했습니다."
-        : "경과기간 구분 없는 고정 중도해지비율을 찾아서 자동으로 설정했습니다.";
-      tierHtml =
-        '<div class="autofill-note autofill-ok">' +
-          '<p><strong>' + matchReasonText + '</strong></p>' +
-          '<p>' + (matchedFlatRatio.productName ? '[' + escapeHtml(matchedFlatRatio.productName) + '] ' : '') + '"' + escapeHtml(matchedFlatRatio.raw) + '" → 적용이율 비율 <strong>' + matchedFlatRatio.pct + '%</strong>로 설정</p>' +
-          '<p class="cell-note">자동으로 채운 값이니 아래 "적용이율 비율" 칸에서 다시 한 번 확인해주세요.</p>' +
         '</div>';
     } else if (flatRatios && flatRatios.length > 1) {
       var candidatesHtml = flatRatios.map(function (r, i) {
@@ -1318,18 +1368,18 @@
       }).join("");
       tierHtml =
         '<div class="autofill-note pdf-found">' +
-          '<p><strong>고정 중도해지비율 후보를 ' + flatRatios.length + '개 찾았지만, 상품(또는 옵션)이 여러 개라 자동으로 정하지 못했습니다.</strong> 가입하신 상품에 맞는 비율의 버튼을 눌러 바로 채우거나, 아래 "적용이율 비율" 칸에 직접 입력해주세요.</p>' +
+          '<p><strong>고정 중도해지비율 후보를 ' + flatRatios.length + '개 찾았지만, 상품(또는 옵션)이 여러 개라 자동으로 정하지 못했습니다.</strong> 해당 카드의 상품명을 먼저 입력한 뒤, 맞는 비율의 버튼을 눌러 채우거나 아래 "적용이율 비율" 칸에 직접 입력해주세요.</p>' +
           candidatesHtml +
         '</div>';
     }
 
     if (!snippets || !snippets.length) {
       if (!tierHtml) {
-        box.innerHTML = '<div class="autofill-note autofill-none">"' + escapeHtml(fileName) + '"에서 중도해지 관련 문구를 찾지 못했습니다. 직접 확인 후 아래 항목에 입력해주세요.</div>';
+        box.innerHTML = '<div class="autofill-note autofill-none">"' + escapeHtml(fileName) + '"에서 중도해지 관련 문구를 찾지 못했습니다. 직접 확인 후 해당 카드에 입력해주세요.</div>';
       } else {
         box.innerHTML = tierHtml;
       }
-      wireFlatRatioPickButtons(p, box);
+      wireFlatRatioPickButtons(box);
       return;
     }
     // PDF 한 개에 상품이 여러 개 실려 있으면, 어느 스니펫이 어느 상품 소속인지
@@ -1343,37 +1393,46 @@
         '<p><strong>"' + escapeHtml(fileName) + '"에서 중도해지 관련 문구 ' + snippets.length + '건을 찾았습니다.</strong> 원문은 아래에서 확인하세요.</p>' +
         snippetsHtml +
       '</div>';
-    wireFlatRatioPickButtons(p, box);
+    wireFlatRatioPickButtons(box);
   }
 
   // "고정 중도해지비율 후보" 목록에서 버튼을 눌러 바로 "적용이율 비율" 칸을 채울 수 있게 한다
   // (상품(또는 옵션)이 여러 개라 자동으로 하나를 정하지 못했을 때, 숫자를 직접 타이핑하지
-  // 않고 후보 중 맞는 걸 한 번 클릭으로 반영하기 위한 용도).
-  function wireFlatRatioPickButtons(p, box) {
+  // 않고 후보 중 맞는 걸 한 번 클릭으로 반영하기 위한 용도). 입력칸이 카드마다 있지 않고
+  // 공용이라 "어느 카드에 적용할지"부터 정해야 한다: 상품명이 일치하는 카드가 있으면 그
+  // 카드(들)에, 없으면 아직 빈 카드가 있으면 그 카드에, 카드가 하나뿐이면 그 카드에 적용한다.
+  function wireFlatRatioPickButtons(box) {
     box.querySelectorAll(".flat-ratio-pick-btn").forEach(function (btn) {
       btn.addEventListener("click", function () {
         var pct = btn.getAttribute("data-pct");
         var candidateProductName = btn.getAttribute("data-product-name") || "";
 
-        // 이 버튼은 PDF를 첨부한 "이 카드"에 비율을 채우는데, PDF에 적힌 상품명과
-        // 이 카드의 상품명이 서로 전혀 안 겹치면(예: PDF는 삼성화재 상품인데
-        // 이 카드는 삼성생명 상품인 경우) 잘못된 카드에 적용하는 것일 수 있으니
-        // 되묻는다. 카드 상품명이 비어있거나 후보에 상품명이 없으면(비교 대상이
-        // 없으니) 그냥 진행한다.
-        if (candidateProductName && normalizeLabelText(p.refs.labelInput.value)) {
-          var overlaps = labelMatchesCandidateName(p.refs.labelInput.value, candidateProductName, false);
-          if (!overlaps) {
+        var targets = candidateProductName
+          ? state.products.filter(function (prod) { return labelMatchesCandidateName(prod.refs.labelInput.value, candidateProductName, false); })
+          : [];
+
+        if (!targets.length) {
+          var blank = pickBlankTargetProduct();
+          if (blank) {
+            targets = [blank];
+          } else if (state.products.length === 1) {
+            targets = state.products.slice();
+          } else {
             var ok = confirm(
-              '이 카드의 상품명은 "' + p.refs.labelInput.value + '"인데, 선택한 ' + pct + '%는 상품설명서의 "' + candidateProductName + '"에서 찾은 값입니다.\n' +
-              '서로 다른 상품일 수 있으니 한 번 더 확인해주세요. 그래도 이 카드에 적용할까요?'
+              (candidateProductName ? '"' + candidateProductName + '"과(와) ' : '') + '상품명이 일치하는 카드를 찾지 못했습니다.\n' +
+              '카드가 여러 개라 어느 카드에 적용할지 정할 수 없습니다. 적용할 카드에 먼저 "상품명"을 입력한 뒤 다시 시도해주세요.\n\n' +
+              '(확인을 누르면 모든 카드에 이 비율(' + pct + '%)을 적용합니다 — 상품이 다르면 취소 후 직접 입력해주세요)'
             );
             if (!ok) return;
+            targets = state.products.slice();
           }
         }
 
-        p.refs.penaltyModeRatio.checked = true;
-        updateProductPenaltyModeUI(p);
-        p.refs.appliedRatePctInput.value = pct;
+        targets.forEach(function (prod) {
+          prod.refs.penaltyModeRatio.checked = true;
+          updateProductPenaltyModeUI(prod);
+          prod.refs.appliedRatePctInput.value = pct;
+        });
         renderReport();
       });
     });
@@ -1948,10 +2007,15 @@
           }
         }
 
+        // 손익분기 "날짜": 지금 이 금리(r.rate)로 재예치하기로 정했다고 가정할 때, 결정을
+        // 미래로 미루면 "유지 vs 재예치" 추천이 뒤바뀌는 시점(있다면)을 추정한다.
+        var flip = estimateRecommendationFlipDate(c.today, c.maturity, penalty.cancelAmount, holdAmountForCompare, r.rate, method);
+
         return {
           label: r.label || (r.years + "년"), years: r.years, rate: r.rate, method: method,
           ownMaturityDate: ownMaturityDate, maturityAmount: maturityAmount, diff: diff, horizonDiffYears: horizonDiffYears,
-          ownTermAmount: ownTermAmount, gapYears: gapYears, requiredReinvestRate: requiredReinvestRate
+          ownTermAmount: ownTermAmount, gapYears: gapYears, requiredReinvestRate: requiredReinvestRate,
+          flipDate: flip ? flip.date : null, flipInitialBetter: flip ? flip.initialBetter : null
         };
       });
     }
@@ -2029,6 +2093,7 @@
   // 신금리를 적용해 그 상품 만기일 시점 금액으로 환산해서 비교한다.
 
   function renderReport() {
+    renderGlobalAttachmentList();
     var customerName = el.customerName.value.trim();
     var todayVal = parseDateUTC(el.todayDate.value);
 
@@ -2255,6 +2320,17 @@
                 : '이 상품 만기 이후 ' + formatYears(rr.gapYears) + '간 최소 <strong style="color:#0b1f3d;">' + formatPct(rr.requiredReinvestRate) + '(연단리 기준)</strong> 이상 재예치해야 기존상품 유지와 동등해집니다.') +
             '</div>');
       }
+      // 손익분기 "날짜": 이 제안금리를 그대로 쓴다고 가정할 때, 결정을 미룰수록 지금의
+      // 추천이 뒤바뀌는 시점(있다면)을 안내한다. 실제 패널티는 계단식으로 줄어드는
+      // 경우가 많아 정확한 날짜라기보다는 참고용 추정치임을 함께 밝힌다.
+      var flipNote = "";
+      if (rr.flipDate) {
+        var flipFromLabel = rr.flipInitialBetter ? "재예치" : "기존상품 유지";
+        var flipToLabel = rr.flipInitialBetter ? "기존상품 유지" : "재예치";
+        flipNote = '<div class="compare-guide" style="background:#f7f9fc;color:#5c6576;border-color:#dde2ea;">손익분기 날짜(추정): 지금은 <strong style="color:#0b1f3d;">' + flipFromLabel + '</strong>가 유리하지만, 결정을 <strong style="color:#0b1f3d;">' + formatDateUTC(rr.flipDate) + '</strong> 이후로 미루면 <strong style="color:#0b1f3d;">' + flipToLabel + '</strong>가 더 유리해질 것으로 추정됩니다(해지적립금이 오늘 값에서 만기 시 예상 수령액까지 경과기간에 비례해 늘어난다고 가정한 단순 추정 — 실제로는 구간별로 계단식 변동이 있을 수 있어 참고용입니다).</div>';
+      } else if (rr.diff !== null) {
+        flipNote = '<div class="compare-guide" style="background:#f7f9fc;color:#5c6576;border-color:#dde2ea;">손익분기 날짜(추정): 결정을 만기까지 미루더라도 현재 추천(' + (rr.diff >= 0 ? "재예치" : "기존상품 유지") + ')이 뒤바뀌지 않을 것으로 추정됩니다.</div>';
+      }
       html += '<div class="compare-row' + (isBest ? " compare-best" : "") + '"' + (isBest ? ' style="background:#f5ead0;"' : '') + '>' +
         '<div class="compare-label">' +
           '<span class="compare-name" style="color:#131b2b;">' + escapeHtml(rr.label) + (isBest ? ' <span class="badge accent">최선</span>' : '') + '</span>' +
@@ -2266,6 +2342,7 @@
         '</div>' +
         '<div class="compare-diff ' + (better ? "better" : "worse") + '" style="color:' + (better ? "#0ca30c" : "#d03b3b") + ';">' + formatSignedWon(rr.diff) + '</div>' +
         guideNote +
+        flipNote +
       '</div>';
     });
     html += '</div>';
@@ -2557,6 +2634,7 @@
     el.todayDate.value = formatDateUTC(todayLocalDate());
     el.existingProducts.innerHTML = "";
     state.products = [];
+    if (el.autofillSummary) el.autofillSummary.innerHTML = "";
     addProduct();
     renderReport();
   }
@@ -2613,6 +2691,7 @@
     renderRows();
     addProduct();
     bindEvents();
+    bindSharedAttachmentInput();
     renderReport();
   }
 

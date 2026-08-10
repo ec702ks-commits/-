@@ -623,6 +623,18 @@ input[type="file"] {
   padding-left: 18px;
 }
 
+.autofill-target {
+  margin: 8px 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+}
+
+.autofill-target:first-of-type {
+  margin-top: 4px;
+}
+
 .autofill-note li {
   margin: 2px 0;
 }
