@@ -281,32 +281,63 @@
   // 짝이 되는 손익분기 "날짜"(오늘 정한 금리를 그대로 쓴다면, 언제까지는 괜찮고 언제부터
   // 뒤바뀌는지) 개념이다.
   //
-  // 미래 날짜의 정확한 해지적립금은 실제로는 회사 시스템의 구간별(계단식) 패널티 규정을
-  // 봐야 정확히 알 수 있어 이 화면만으로는 알 수 없다. 대신 "해지적립금이 오늘 값에서
-  // 만기 시 예상 수령액까지 경과기간에 비례해 점차 늘어난다"는 단순화한 가정으로 선형
-  // 추정한다 — 오늘(today)에서는 실제 해지적립금과 일치하고, 만기(maturity)에서는 정확히
-  // 만기 시 예상 수령액과 일치하도록 양 끝을 고정한 뒤 그 사이를 선형 보간한다. 실제
-  // 패널티는 계단식으로 줄어드는 경우가 많아 정확한 날짜라기보다는 참고용 추정치이며,
-  // 이 사실은 화면/보고서에 함께 안내한다.
-  function estimateRecommendationFlipDate(today, maturity, cancelToday, holdAmountForCompare, ratePct, method) {
-    if (!today || !maturity || cancelToday === null || cancelToday === undefined || cancelToday <= 0) return null;
+  // 미래 시점의 해지적립금을 어떻게 추정할지는 이 상품의 해지패널티 계산 방식에 따라 다르다.
+  // - "적용이율 비율" 방식이고 약정금리를 알고 있으면: 그 시점까지의 잔액을 약정금리로
+  //   그대로 연장해서 계산하고(계산기 다른 곳과 동일한 30/360 방식), 상품설명서 PDF에서
+  //   "경과기간별 적용비율표"(activeBreakpoints)를 자동 인식해 적용한 상태라면 그 구간표를
+  //   따라 미래 시점에 실제로 적용될 구간(비율)까지 그대로 반영한다 — 즉, 운용(경과)일자에
+  //   따라 적용비율이 달라지는 경우도 미래 날짜 계산에 반영된다. 사용자가 "적용이율 비율"
+  //   칸을 직접 고쳐 쓰면 그 값을 시간에 관계없이 고정된 비율로 보고 계산한다(구간표를 더
+  //   신뢰할 수 없다고 보기 때문).
+  // - "해지적립금 직접입력" 방식(회사 시스템이 계산해 준 오늘자 스냅샷 숫자만 있고 계산식이
+  //   없는 경우)은 미래 값을 정확히 알 방법이 없다. 이 경우만 "해지적립금이 오늘 값에서
+  //   만기 시 예상 수령액까지 경과기간에 비례해 늘어난다"는 단순 선형추정을 대신 쓴다.
+  //   어느 방식을 썼는지는 반환값(calcMethod)에 담아 화면/보고서 문구에 그대로 밝힌다.
+  function estimateRecommendationFlipDate(p, c, history, penalty, holdAmountForCompare, offerRatePct, rowMethod) {
+    if (!c || !c.today || !c.maturity) return null;
     if (holdAmountForCompare === null || holdAmountForCompare === undefined || holdAmountForCompare <= 0) return null;
-    if (ratePct === null || ratePct === undefined || isNaN(ratePct)) return null;
-    var totalDays = (maturity.getTime() - today.getTime()) / 86400000;
+    if (penalty.cancelAmount === null || penalty.cancelAmount === undefined || penalty.cancelAmount <= 0) return null;
+    if (offerRatePct === null || offerRatePct === undefined || isNaN(offerRatePct)) return null;
+    var totalDays = (c.maturity.getTime() - c.today.getTime()) / 86400000;
     if (totalDays <= 1) return null;
 
-    var rr = ratePct / 100;
-    function diffAtDate(d) {
-      var elapsedDays = (d.getTime() - today.getTime()) / 86400000;
+    var rr = offerRatePct / 100;
+    var useExactRatioModel = penalty.mode === "ratio" && !!history && c.rate !== null;
+    var currentFlatPct = parseFloat(p.refs.appliedRatePctInput.value);
+    currentFlatPct = isNaN(currentFlatPct) ? null : currentFlatPct;
+    var calcMethod = !useExactRatioModel ? "linear" : (p.activeBreakpoints && p.activeBreakpoints.length ? "tiered" : "ratioFlat");
+
+    function cancelAtDate(d) {
+      if (useExactRatioModel) {
+        var yrsFromToday = Math.max(0, yearsBetween(c.today, d) || 0);
+        var preValue = history.balanceToday * growthFactor(c.method, c.rate / 100, yrsFromToday);
+        var pctAtD = currentFlatPct;
+        if (p.activeBreakpoints && p.activeBreakpoints.length) {
+          var elapsedYearsAtD = yearsBetween(c.start, d);
+          var elapsedMonthsAtD = Math.max(0, elapsedYearsAtD || 0) * 12;
+          var tier = matchPenaltyTier(p.activeBreakpoints, elapsedMonthsAtD);
+          if (tier) pctAtD = tier.pct;
+        }
+        if (pctAtD === null) return null;
+        var interestPortion = Math.max(0, preValue - history.netPrincipal);
+        return history.netPrincipal + interestPortion * (pctAtD / 100);
+      }
+      // 선형추정(해지적립금 직접입력 등 계산식을 알 수 없는 경우)
+      var elapsedDays = (d.getTime() - c.today.getTime()) / 86400000;
       var frac = Math.max(0, Math.min(1, elapsedDays / totalDays));
-      var cancelAtD = cancelToday + (holdAmountForCompare - cancelToday) * frac;
-      var yrsToMaturity = Math.max(0, actYearsBetween(d, maturity));
-      var reinvestVal = cancelAtD * growthFactor(method, rr, yrsToMaturity);
+      return penalty.cancelAmount + (holdAmountForCompare - penalty.cancelAmount) * frac;
+    }
+
+    function diffAtDate(d) {
+      var cancelAtD = cancelAtDate(d);
+      if (cancelAtD === null) return null;
+      var yrsToMaturity = Math.max(0, actYearsBetween(d, c.maturity));
+      var reinvestVal = cancelAtD * growthFactor(rowMethod, rr, yrsToMaturity);
       return reinvestVal - holdAmountForCompare;
     }
 
-    var initialDiff = diffAtDate(today);
-    if (initialDiff === 0) return null;
+    var initialDiff = diffAtDate(c.today);
+    if (initialDiff === null || initialDiff === 0) return null;
     var initialBetter = initialDiff > 0; // true=오늘 기준 재예치가 유리
 
     // 하루 단위로 스캔해서 부호(유·불리)가 처음 바뀌는 날짜를 찾는다. 기간이 보통
@@ -314,13 +345,15 @@
     // 긴 기간에 대비해 스캔 간격을 조금 넓히는 안전장치만 둔다.
     var stepDays = totalDays > 3650 ? Math.ceil(totalDays / 3650) : 1;
     for (var day = stepDays; day < totalDays; day += stepDays) {
-      var d = new Date(today.getTime() + day * 86400000);
-      var better = diffAtDate(d) > 0;
+      var d = new Date(c.today.getTime() + day * 86400000);
+      var diff = diffAtDate(d);
+      if (diff === null) continue;
+      var better = diff > 0;
       if (better !== initialBetter) {
-        return { date: d, initialBetter: initialBetter };
+        return { date: d, initialBetter: initialBetter, calcMethod: calcMethod };
       }
     }
-    return null; // 만기 전까지는 뒤바뀌지 않을 것으로 추정됨
+    return { date: null, initialBetter: initialBetter, calcMethod: calcMethod }; // 만기 전까지는 뒤바뀌지 않을 것으로 추정됨
   }
 
   // 명세일자 이후 실제 인출 이력을 반영해 "오늘 기준 실제 잔액"을 재구성한다.
@@ -429,7 +462,15 @@
   // ---------- 기존상품(명세) : 여러 건 지원 ----------
 
   function createProduct() {
-    return { id: state.nextId++, withdrawals: [], attachments: [], refs: {}, holdAmountManual: false, principalAsOfDate: null };
+    return {
+      id: state.nextId++, withdrawals: [], attachments: [], refs: {}, holdAmountManual: false, principalAsOfDate: null,
+      // 상품설명서 PDF에서 "경과기간별 적용비율표"(구간별로 중도해지 시 적용이율 비율이
+      // 달라지는 표)를 찾아 자동 적용한 경우, 그 구간표를 여기 저장해둔다 — 손익분기
+      // 날짜(미래 추정)를 계산할 때, 미래 시점에는 지금과 다른 구간이 적용될 수 있는
+      // 것까지 반영하기 위해서다. 사용자가 "적용이율 비율" 칸을 직접 수정하면(더 이상
+      // 이 구간표를 그대로 신뢰할 수 없으므로) null로 비운다.
+      activeBreakpoints: null
+    };
   }
 
   // 상품 카드는 추가될 때 딱 한 번만 DOM에 생성되고, 이후 renderReport()가
@@ -616,9 +657,16 @@
     [refs.principalInput, refs.contributionPrincipalInput, refs.holdAmountInput, refs.directCancelAmountInput, refs.directPenaltyAmountInput].forEach(bindAmountMask);
 
     [refs.labelInput, refs.principalInput, refs.contributionPrincipalInput, refs.startDateInput, refs.maturityDateInput,
-      refs.contractRateInput, refs.directCancelAmountInput, refs.directPenaltyAmountInput, refs.appliedRatePctInput
+      refs.contractRateInput, refs.directCancelAmountInput, refs.directPenaltyAmountInput
     ].forEach(function (input) {
       input.addEventListener("input", renderReport);
+    });
+    // 이 칸을 사람이 직접 고쳐 쓰면, 자동 적용됐던 구간별 적용비율표(있었다면)를 더 이상
+    // 미래 시점 손익분기 날짜 추정에 쓰지 않는다 — 직접 입력한 값이 앞으로도 구간표
+    // 그대로일지 알 수 없기 때문이다(고정값으로 취급).
+    refs.appliedRatePctInput.addEventListener("input", function () {
+      p.activeBreakpoints = null;
+      renderReport();
     });
     // 이 칸을 직접 입력하기 시작하면(시스템 조회값 등) 이후로는 이자계산방식을 바꿔도
     // 자동으로 덮어쓰지 않는다. 비우면 다시 선택된 이자계산방식 값으로 자동 채워진다.
@@ -817,10 +865,11 @@
           var c = gatherProductCustomer(prod);
           var matchedTier = null;
           var elapsedMonths = null;
+          var applicableBreakpoints = null;
           if (result.breakpoints && result.breakpoints.length && c.elapsedYears !== null) {
             elapsedMonths = Math.max(0, c.elapsedYears) * 12;
             var hasTags = result.breakpoints.some(function (b) { return b.productName; });
-            var applicableBreakpoints = !hasTags ? result.breakpoints : result.breakpoints.filter(function (b) {
+            applicableBreakpoints = !hasTags ? result.breakpoints : result.breakpoints.filter(function (b) {
               return !b.productName || labelMatchesCandidateName(prod.refs.labelInput.value, b.productName, true);
             });
             matchedTier = matchPenaltyTier(applicableBreakpoints, elapsedMonths);
@@ -847,6 +896,10 @@
           prod.refs.penaltyModeRatio.checked = true;
           updateProductPenaltyModeUI(prod);
           prod.refs.appliedRatePctInput.value = matchedTier ? matchedTier.pct : matchedFlatRatio.pct;
+          // 구간별 표를 찾아 자동 적용했을 때만 그 구간표를 저장해서, 손익분기 날짜
+          // 추정에 "미래엔 다른 구간이 적용될 수 있다"는 사실을 반영할 수 있게 한다.
+          // 고정비율(구간 없음)이면 시간에 따라 바뀔 근거가 없으므로 비워둔다.
+          prod.activeBreakpoints = matchedTier ? applicableBreakpoints : null;
 
           prod.attachments.push({
             id: state.nextId++, kind: "pdf", name: file.name,
@@ -1432,6 +1485,9 @@
           prod.refs.penaltyModeRatio.checked = true;
           updateProductPenaltyModeUI(prod);
           prod.refs.appliedRatePctInput.value = pct;
+          // 구간 없는 고정비율을 적용한 것이므로, 이전에 다른 파일에서 저장해둔
+          // 구간표가 남아있었다면(있을 가능성은 낮지만) 함께 비운다.
+          prod.activeBreakpoints = null;
         });
         renderReport();
       });
@@ -2008,14 +2064,17 @@
         }
 
         // 손익분기 "날짜": 지금 이 금리(r.rate)로 재예치하기로 정했다고 가정할 때, 결정을
-        // 미래로 미루면 "유지 vs 재예치" 추천이 뒤바뀌는 시점(있다면)을 추정한다.
-        var flip = estimateRecommendationFlipDate(c.today, c.maturity, penalty.cancelAmount, holdAmountForCompare, r.rate, method);
+        // 미래로 미루면 "유지 vs 재예치" 추천이 뒤바뀌는 시점(있다면)을 추정한다. 가능하면
+        // (적용이율 비율 방식 + 약정금리를 아는 경우) 실제 계산식을 미래로 연장해서 계산하고,
+        // 그 계산식조차 없는 경우(해지적립금 직접입력 등)만 단순 선형추정으로 대신한다.
+        var flip = estimateRecommendationFlipDate(p, c, history, penalty, holdAmountForCompare, r.rate, method);
 
         return {
           label: r.label || (r.years + "년"), years: r.years, rate: r.rate, method: method,
           ownMaturityDate: ownMaturityDate, maturityAmount: maturityAmount, diff: diff, horizonDiffYears: horizonDiffYears,
           ownTermAmount: ownTermAmount, gapYears: gapYears, requiredReinvestRate: requiredReinvestRate,
-          flipDate: flip ? flip.date : null, flipInitialBetter: flip ? flip.initialBetter : null
+          flipDate: flip ? flip.date : null, flipInitialBetter: flip ? flip.initialBetter : null,
+          flipCalcMethod: flip ? flip.calcMethod : null
         };
       });
     }
@@ -2319,15 +2378,23 @@
             '</div>');
       }
       // 손익분기 "날짜": 이 제안금리를 그대로 쓴다고 가정할 때, 결정을 미룰수록 지금의
-      // 추천이 뒤바뀌는 시점(있다면)을 안내한다. 실제 패널티는 계단식으로 줄어드는
-      // 경우가 많아 정확한 날짜라기보다는 참고용 추정치임을 함께 밝힌다.
+      // 추천이 뒤바뀌는 시점(있다면)을 안내한다. 계산 근거(구간별 적용비율표 반영/
+      // 약정금리 고정비율/단순 선형추정)에 따라 신뢰도가 다르므로 어떤 방식으로 계산한
+      // 값인지 문구에 함께 밝힌다.
       var flipNote = "";
+      var flipBasis = rr.flipCalcMethod === "tiered"
+        ? "약정금리와 상품설명서의 구간별 적용비율표(경과기간에 따라 달라지는 적용비율)를 반영해 계산"
+        : rr.flipCalcMethod === "ratioFlat"
+          ? "약정금리로 미래 잔액을 계산하고, 적용이율 비율(%)은 지금과 동일하게 유지된다고 가정"
+          : rr.flipCalcMethod === "linear"
+            ? "해지적립금이 오늘 값에서 만기 시 예상 수령액까지 경과기간에 비례해 늘어난다고 가정한 단순 추정 — 실제로는 구간별로 계단식 변동이 있을 수 있어 참고용"
+            : "";
       if (rr.flipDate) {
         var flipFromLabel = rr.flipInitialBetter ? "재예치" : "기존상품 유지";
         var flipToLabel = rr.flipInitialBetter ? "기존상품 유지" : "재예치";
-        flipNote = '<div class="compare-guide" style="background:#f7f9fc;color:#5c6576;border-color:#dde2ea;">손익분기 날짜(추정): 지금은 <strong style="color:#0b1f3d;">' + flipFromLabel + '</strong>가 유리하지만, 결정을 <strong style="color:#0b1f3d;">' + formatDateUTC(rr.flipDate) + '</strong> 이후로 미루면 <strong style="color:#0b1f3d;">' + flipToLabel + '</strong>가 더 유리해질 것으로 추정됩니다(해지적립금이 오늘 값에서 만기 시 예상 수령액까지 경과기간에 비례해 늘어난다고 가정한 단순 추정 — 실제로는 구간별로 계단식 변동이 있을 수 있어 참고용입니다).</div>';
-      } else if (rr.diff !== null) {
-        flipNote = '<div class="compare-guide" style="background:#f7f9fc;color:#5c6576;border-color:#dde2ea;">손익분기 날짜(추정): 결정을 만기까지 미루더라도 현재 추천(' + (rr.diff >= 0 ? "재예치" : "기존상품 유지") + ')이 뒤바뀌지 않을 것으로 추정됩니다.</div>';
+        flipNote = '<div class="compare-guide" style="background:#f7f9fc;color:#5c6576;border-color:#dde2ea;">손익분기 날짜(추정): 지금은 <strong style="color:#0b1f3d;">' + flipFromLabel + '</strong>가 유리하지만, 결정을 <strong style="color:#0b1f3d;">' + formatDateUTC(rr.flipDate) + '</strong> 이후로 미루면 <strong style="color:#0b1f3d;">' + flipToLabel + '</strong>가 더 유리해질 것으로 추정됩니다' + (flipBasis ? '(' + flipBasis + ').' : '.') + '</div>';
+      } else if (rr.diff !== null && rr.flipCalcMethod) {
+        flipNote = '<div class="compare-guide" style="background:#f7f9fc;color:#5c6576;border-color:#dde2ea;">손익분기 날짜(추정): 결정을 만기까지 미루더라도 현재 추천(' + (rr.diff >= 0 ? "재예치" : "기존상품 유지") + ')이 뒤바뀌지 않을 것으로 추정됩니다' + (flipBasis ? '(' + flipBasis + ').' : '.') + '</div>';
       }
       html += '<div class="compare-row' + (isBest ? " compare-best" : "") + '"' + (isBest ? ' style="background:#f5ead0;"' : '') + '>' +
         '<div class="compare-label">' +
