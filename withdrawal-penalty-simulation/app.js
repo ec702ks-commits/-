@@ -2358,18 +2358,39 @@
         });
       } else {
         html += '<p class="cell-note" style="color:#5c6576;"><strong style="color:#131b2b;">' + escapeHtml(f.name) + '</strong> — 상품설명서(중도해지 관련 조항 확인용) · 적용된 상품: ' + escapeHtml(appliedToLabel) + '</p>';
-        f.matches.forEach(function (m) {
+
+        // 경과기간별 구간표(matchedTier)는 상품마다 경과기간이 달라 적용비율이 서로
+        // 다를 수 있어 상품별로 한 줄씩 보여준다. 반면 고정비율(matchedFlatRatio,
+        // 경과기간과 무관하게 항상 같은 비율)은 같은 값이 여러 상품에 그대로 반복될
+        // 뿐이라, 상품마다 줄을 나누지 않고 같은 비율끼리 묶어 한 번만 보여준다.
+        f.matches.filter(function (m) { return m.a.matchedTier; }).forEach(function (m) {
           var a = m.a;
-          if (a.matchedTier) {
-            html += '<p class="cell-note" style="color:#5c6576;">' + escapeHtml(m.label) + ': 경과기간별 적용비율표에서 "' + escapeHtml(a.matchedTier.raw) + '" 구간 적용 → 적용이율 비율 <strong style="color:#131b2b;">' + a.matchedTier.pct + '%</strong></p>';
-          } else if (a.matchedFlatRatio) {
-            html += '<p class="cell-note" style="color:#5c6576;">' + escapeHtml(m.label) + ': ' + (a.matchedFlatRatio.productName ? '[' + escapeHtml(a.matchedFlatRatio.productName) + '] ' : '') +
-              '"' + escapeHtml(a.matchedFlatRatio.raw) + '" → 적용이율 비율 <strong style="color:#131b2b;">' + a.matchedFlatRatio.pct + '%</strong>' +
-              (a.flatMatchReason === "label" ? ' (상품명 일치로 자동 선택됨)' : '') + '</p>';
-          } else if (a.flatRatios && a.flatRatios.length > 1) {
-            html += '<p class="cell-note" style="color:#5c6576;">' + escapeHtml(m.label) + ': 고정 중도해지비율 후보 ' + a.flatRatios.length + '개 발견(자동 설정 안 됨, 직접 확인 후 반영)</p>';
-          }
+          html += '<p class="cell-note" style="color:#5c6576;">' + escapeHtml(m.label) + ': 경과기간별 적용비율표에서 "' + escapeHtml(a.matchedTier.raw) + '" 구간 적용 → 적용이율 비율 <strong style="color:#131b2b;">' + a.matchedTier.pct + '%</strong></p>';
         });
+
+        var flatGroups = [];
+        f.matches.filter(function (m) { return !m.a.matchedTier && m.a.matchedFlatRatio; }).forEach(function (m) {
+          var ratio = m.a.matchedFlatRatio;
+          var key = ratio.pct + "|" + ratio.raw;
+          var g = flatGroups.filter(function (g) { return g.key === key; })[0];
+          if (!g) {
+            g = { key: key, ratio: ratio, reason: m.a.flatMatchReason, labels: [] };
+            flatGroups.push(g);
+          }
+          g.labels.push(m.label);
+        });
+        flatGroups.forEach(function (g) {
+          html += '<p class="cell-note" style="color:#5c6576;">' + (g.ratio.productName ? '[' + escapeHtml(g.ratio.productName) + '] ' : '') +
+            '"' + escapeHtml(g.ratio.raw) + '" → 적용이율 비율 <strong style="color:#131b2b;">' + g.ratio.pct + '%</strong>' +
+            (g.reason === "label" ? ' (상품명 일치로 자동 선택됨)' : '') +
+            ' · 적용된 상품: ' + escapeHtml(g.labels.join(", ")) + '</p>';
+        });
+
+        var hasCandidateNote = f.matches.some(function (m) { return !m.a.matchedTier && !m.a.matchedFlatRatio && m.a.flatRatios && m.a.flatRatios.length > 1; });
+        if (hasCandidateNote) {
+          var candidateCount = f.matches.filter(function (m) { return m.a.flatRatios && m.a.flatRatios.length > 1; })[0].a.flatRatios.length;
+          html += '<p class="cell-note" style="color:#5c6576;">고정 중도해지비율 후보 ' + candidateCount + '개 발견(자동 설정 안 됨, 직접 확인 후 반영)</p>';
+        }
       }
     });
     html += '</div>';
@@ -2643,8 +2664,18 @@
     var hardOffsetsCss = collectHardPageBreakOffsets(clone);
     var tablesCss = collectTableInfo(clone);
 
+    // 브라우저는 캔버스 한 변의 최대 크기에 제한이 있다(대부분 32,767px 안팎). 기존상품이
+    // 아주 많으면(수십 건) 배율 2배로 만든 캔버스 높이가 이 한계를 넘어서, 그 이후 내용이
+    // 캔버스에 아예 안 그려지고 뒷부분 페이지가 통째로 빈 채로 나오는 문제가 있었다(30개
+    // 상품으로 실제 재현/확인됨). 안전 한계 아래로 배율을 자동으로 낮춰서 이 문제를
+    // 피한다 — 상품이 몇 건 안 되는 보통의 경우엔 여전히 선명한 배율(2배)을 그대로 쓴다.
+    var CANVAS_MAX_HEIGHT_PX = 28000; // 브라우저 한계(대부분 32767)보다 여유를 둔 안전값
+    var naturalHeightPx = clone.scrollHeight || 1;
+    var captureScale = Math.min(2, CANVAS_MAX_HEIGHT_PX / naturalHeightPx);
+    if (captureScale < 1) captureScale = 1;
+
     html2canvas(clone, {
-      scale: 2,
+      scale: captureScale,
       backgroundColor: "#ffffff",
       useCORS: true,
       logging: false,
