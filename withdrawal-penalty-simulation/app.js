@@ -1746,7 +1746,7 @@
 
   // 첨부 자료 표에서 불필요한 개인정보 열은 빼고, 자주 길어지는 열은 넓게 표시한다.
   // 열 위치는 파일마다 다를 수 있어 고정 인덱스 대신 헤더 텍스트로 찾는다.
-  var ATTACHMENT_DROP_COLUMN_KEYWORDS = ["가입자번호", "가입자명", "주민번호"];
+  var ATTACHMENT_DROP_COLUMN_KEYWORDS = ["가입자번호", "가입자명", "주민번호", "좌수", "기준가"];
   var ATTACHMENT_WIDE_COLUMN_KEYWORDS = ["상품명", "명세일자", "적립금기준일자"];
 
   function renderSheetTableHtml(sheet) {
@@ -2613,6 +2613,28 @@
     // 나오는 문제로 발견됨). 캡처 전에 명시적으로 지운다.
     Array.prototype.forEach.call(clone.querySelectorAll(".no-print"), function (n) { n.remove(); });
     document.body.appendChild(clone);
+
+    // 첨부 엑셀 표는 열이 많으면(회사 시스템 다건조회 자료 등) 표 자체 폭이 캡처 폭보다
+    // 넓어진다. 화면에서는 ".table-scroll"을 가로로 스크롤해서 나머지를 볼 수 있지만,
+    // html2canvas는 스크롤 위치 기준으로 실제로 화면에 그려진 부분만 캡처하기 때문에
+    // 스크롤 밖으로 넘어간 오른쪽 열들이 통째로 안 찍히고 잘려 보이는 문제가 있었다.
+    // PDF에서는 가로 스크롤이 의미가 없으므로, 폭이 넘치는 표는 페이지 폭에 맞게
+    // 통째로 축소해서 한 화면(페이지)에 다 들어오게 한다.
+    Array.prototype.forEach.call(clone.querySelectorAll(".table-scroll"), function (scrollBox) {
+      var table = scrollBox.querySelector("table");
+      if (!table) return;
+      var naturalWidth = table.scrollWidth;
+      var availWidth = scrollBox.clientWidth;
+      if (availWidth > 0 && naturalWidth > availWidth) {
+        var scale = availWidth / naturalWidth;
+        table.style.transformOrigin = "left top";
+        table.style.transform = "scale(" + scale + ")";
+        // transform은 그려지는 모양만 줄일 뿐 차지하는 레이아웃 공간은 그대로라, 축소한
+        // 만큼 컨테이너 높이도 같이 줄여줘야 표 아래에 빈 공백이 남지 않는다.
+        scrollBox.style.height = (table.scrollHeight * scale) + "px";
+        scrollBox.style.overflow = "hidden";
+      }
+    });
 
     // 카드 등이 잘리지 않을 안전한 페이지 분할 지점과, 상품별로 반드시 새 페이지에서
     // 시작해야 하는 강제 분할 지점을 캔버스로 그리기 전(요소가 실제 레이아웃된 상태)에
