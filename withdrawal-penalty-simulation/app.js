@@ -2201,6 +2201,9 @@
       html += buildProductReportSection(r, idx, multi);
     });
 
+    // ---- 첨부 자료(파일 단위로 한 번씩만) ----
+    html += buildAttachmentsAppendix(validResults);
+
     html += '<p class="report-disclaimer" style="color:#5c6576;">본 시뮬레이션은 입력하신 정보를 기준으로 한 추정 참고자료이며, 실제 적용금리·세금·수수료 등에 따라 실수령액과 차이가 있을 수 있습니다. 신상품 재예치 금액은 각 기존상품 만기일까지의 잔여기간에 제안금리(단리)를 적용해 환산한 값이며, 상품 자체 만기가 그보다 짧거나 길 경우 이후 재투자 조건은 별도로 확인이 필요합니다. 신상품 제안금리는 안내 시점 기준이며 향후 변동될 수 있습니다.' +
       (validResults.some(function (r) { return r.history && r.history.hasEvents; }) ? ' 중간인출 이력은 인출액이 원금에서 먼저 차감된 것으로 보수적으로 가정해 계산했으며, 정확한 금액은 상품사 확인이 필요합니다.' : '') +
       (validResults.some(function (r) { return r.history && r.history.netPrincipalEstimated; }) ? ' 납입원금을 별도로 입력하지 않은 상품은 현재 적립금을 경과기간만큼 할인해 순원금을 추정했습니다. 정확한 납입원금을 입력하시면 더 정확한 패널티 계산이 가능합니다.' : '') +
@@ -2304,41 +2307,71 @@
     html += kv("해지방식", penalty.mode === "direct" ? "해지적립금 직접입력" : "적용이율 비율 방식");
     if (penalty.penaltyAmount !== null) html += kv("해지패널티 금액", formatWon(penalty.penaltyAmount));
     html += kv("해지적립금(재예치 원금)", formatWon(penalty.cancelAmount));
+    if (r.product.attachments && r.product.attachments.length) {
+      // 첨부 자료 원문(표/근거)은 상품마다 반복해서 넣지 않고 문서 맨 뒤 "첨부 자료"에
+      // 한 번만 모아서 보여준다(같은 엑셀/PDF 한 개가 여러 상품에 공통으로 적용되는
+      // 경우가 많아, 상품 섹션마다 그대로 반복하면 페이지만 늘어나고 지저분해진다).
+      // 여기서는 어떤 파일이 근거였는지만 짧게 밝혀둔다.
+      var attachNames = [];
+      r.product.attachments.forEach(function (a) { if (attachNames.indexOf(a.name) === -1) attachNames.push(a.name); });
+      html += kv("산출 근거 자료", escapeHtml(attachNames.join(", ")) + ' <span class="cell-note">(문서 끝 "첨부 자료" 참고)</span>');
+    }
     html += "</div>";
 
-    if (r.product.attachments && r.product.attachments.length) {
-      html += '<div class="report-block" style="background:#ffffff;color:#131b2b;"><h4>첨부: 해지패널티 계산 자료</h4>';
-      r.product.attachments.forEach(function (a) {
-        if (a.kind === "excel") {
-          a.sheets.forEach(function (sheet) {
-            if (a.sheets.length > 1) {
-              html += '<p class="cell-note" style="color:#5c6576;"><strong style="color:#131b2b;">' + escapeHtml(a.name) + '</strong> — 시트: ' + escapeHtml(sheet.name) + '</p>';
-            } else {
-              html += '<p class="cell-note" style="color:#5c6576;">' + escapeHtml(a.name) + '</p>';
-            }
-            html += renderSheetTableHtml(sheet);
-          });
-        } else {
-          // 상품설명서 PDF에서 찾은 원문 문구 전체를 그대로 옮기면(회사 안내/민원 연락처
-          // 같은 무관한 문단까지 키워드 매칭으로 같이 딸려와서) 고객용 문서가 지저분해지고
-          // 분량도 길어져 페이지가 어색하게 잘리기 쉽다. 그래서 client 리포트에는 "어떤
-          // 근거로 몇 %가 적용됐는지"만 한 줄로 요약해서 남기고, 원문 발췌는 담당자가
-          // 입력 화면에서 확인하는 용도로만 쓰고 보고서에는 넣지 않는다.
-          html += '<p class="cell-note" style="color:#5c6576;">' + escapeHtml(a.name) + ' — 상품설명서(중도해지 관련 조항 확인용)</p>';
+    html += '</div>';
+    return html;
+  }
+
+  // 고객용 리포트 맨 끝에 첨부 자료(엑셀/상품설명서)를 파일 단위로 한 번씩만 모아서
+  // 보여준다. 같은 파일 한 개가 여러 상품 카드에 공통으로 자동 적용되는 경우(당사
+  // 다건조회 엑셀, 공통 상품설명서 PDF 등)가 많은데, 그때마다 상품 섹션 안에 표/문구를
+  // 그대로 반복해서 넣으면 똑같은 내용이 상품 수만큼 반복되어 페이지만 늘어나고
+  // 지저분해진다. 그래서 실제 표/근거는 여기 한 곳에서만 보여주고, 어느 상품(들)에
+  // 적용됐는지를 함께 표시한다.
+  function buildAttachmentsAppendix(validResults) {
+    var files = [];
+    validResults.forEach(function (r, ridx) {
+      var productLabel = "기존상품 " + (ridx + 1) + (r.c.label ? "(" + r.c.label + ")" : "");
+      (r.product.attachments || []).forEach(function (a) {
+        var entry = files.filter(function (f) { return f.name === a.name && f.kind === a.kind; })[0];
+        if (!entry) {
+          entry = { name: a.name, kind: a.kind, refAttachment: a, productLabels: [], matches: [] };
+          files.push(entry);
+        }
+        if (entry.productLabels.indexOf(productLabel) === -1) entry.productLabels.push(productLabel);
+        entry.matches.push({ label: productLabel, a: a });
+      });
+    });
+    if (!files.length) return "";
+
+    var html = '<div class="report-block" style="background:#ffffff;color:#131b2b;"><h3>첨부 자료</h3>';
+    html += '<p class="cell-note" style="color:#5c6576;">위 상품별 해지패널티 계산에 사용된 근거 자료입니다. 하나의 자료가 여러 상품에 공통으로 적용된 경우 여기에는 한 번만 표시합니다.</p>';
+    files.forEach(function (f) {
+      var appliedToLabel = f.productLabels.join(", ");
+      if (f.kind === "excel") {
+        html += '<p class="cell-note" style="color:#5c6576;"><strong style="color:#131b2b;">' + escapeHtml(f.name) + '</strong> — 적용된 상품: ' + escapeHtml(appliedToLabel) + '</p>';
+        f.refAttachment.sheets.forEach(function (sheet) {
+          if (f.refAttachment.sheets.length > 1) {
+            html += '<p class="cell-note" style="color:#5c6576;">시트: ' + escapeHtml(sheet.name) + '</p>';
+          }
+          html += renderSheetTableHtml(sheet);
+        });
+      } else {
+        html += '<p class="cell-note" style="color:#5c6576;"><strong style="color:#131b2b;">' + escapeHtml(f.name) + '</strong> — 상품설명서(중도해지 관련 조항 확인용) · 적용된 상품: ' + escapeHtml(appliedToLabel) + '</p>';
+        f.matches.forEach(function (m) {
+          var a = m.a;
           if (a.matchedTier) {
-            html += '<p class="cell-note" style="color:#5c6576;">경과기간별 적용비율표에서 "' + escapeHtml(a.matchedTier.raw) + '" 구간이 적용되어 적용이율 비율 <strong style="color:#131b2b;">' + a.matchedTier.pct + '%</strong>로 자동 설정됨</p>';
+            html += '<p class="cell-note" style="color:#5c6576;">' + escapeHtml(m.label) + ': 경과기간별 적용비율표에서 "' + escapeHtml(a.matchedTier.raw) + '" 구간 적용 → 적용이율 비율 <strong style="color:#131b2b;">' + a.matchedTier.pct + '%</strong></p>';
           } else if (a.matchedFlatRatio) {
-            html += '<p class="cell-note" style="color:#5c6576;">' + (a.matchedFlatRatio.productName ? '[' + escapeHtml(a.matchedFlatRatio.productName) + '] ' : '') +
-              '"' + escapeHtml(a.matchedFlatRatio.raw) + '"에서 적용이율 비율 <strong style="color:#131b2b;">' + a.matchedFlatRatio.pct + '%</strong>로 자동 설정됨' +
+            html += '<p class="cell-note" style="color:#5c6576;">' + escapeHtml(m.label) + ': ' + (a.matchedFlatRatio.productName ? '[' + escapeHtml(a.matchedFlatRatio.productName) + '] ' : '') +
+              '"' + escapeHtml(a.matchedFlatRatio.raw) + '" → 적용이율 비율 <strong style="color:#131b2b;">' + a.matchedFlatRatio.pct + '%</strong>' +
               (a.flatMatchReason === "label" ? ' (상품명 일치로 자동 선택됨)' : '') + '</p>';
           } else if (a.flatRatios && a.flatRatios.length > 1) {
-            html += '<p class="cell-note" style="color:#5c6576;">고정 중도해지비율 후보 ' + a.flatRatios.length + '개 발견(상품/옵션이 여러 개라 자동 설정되지 않아, 입력 화면에서 직접 확인 후 반영함)</p>';
+            html += '<p class="cell-note" style="color:#5c6576;">' + escapeHtml(m.label) + ': 고정 중도해지비율 후보 ' + a.flatRatios.length + '개 발견(자동 설정 안 됨, 직접 확인 후 반영)</p>';
           }
-        }
-      });
-      html += '</div>';
-    }
-
+        });
+      }
+    });
     html += '</div>';
     return html;
   }
