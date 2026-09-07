@@ -438,6 +438,14 @@
     }
     el.contactsDbExistingInfo.classList.remove("hidden");
     el.contactsDbStatus.textContent = db.count + "명 저장됨 (최근 저장: " + formatDate(new Date(db.updatedAt)) + ")";
+
+    // 저장된 DB가 있고 아직 연락처 파일을 새로 올리지 않았다면, 굳이 "이 DB 사용"을
+    // 누르지 않아도 기본적으로 이 DB를 쓰는 것으로 간주한다 — 그래야 만기상품
+    // 엑셀만 올렸을 때 불필요하게 "휴대폰번호 컬럼"을 요구하지 않는다.
+    if (!state.contactsFiles.length) {
+      state.useStoredContacts = true;
+      el.fileNameDisplayContacts.textContent = "저장된 연락처 DB를 사용합니다 (새로 올리면 취소됩니다).";
+    }
   }
 
   function exportContactsDb() {
