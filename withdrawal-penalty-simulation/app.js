@@ -694,7 +694,22 @@
           return;
         }
         var years = parseFloat(btn.getAttribute("data-term-years"));
-        refs.maturityDateInput.value = formatDateUTC(addYears(start, years));
+        var computed = formatDateUTC(addYears(start, years));
+        var existing = refs.maturityDateInput.value.trim();
+        // 만기일자에 이미 값이 들어있고 이 빠른 설정이 계산하는 값과 다르면, 이미
+        // 정확히 입력해둔(예: 회사 시스템 조회 자료 그대로 옮긴) 만기일자를 조용히
+        // 덮어써서 계산 결과(만기 시 예상 수령액 등)가 모르는 새 바뀌는 일을 막기 위해
+        // 먼저 확인을 받는다. 이 빠른 설정은 "명세일자 + 기간(1년=365일 고정)"으로
+        // 날짜수를 계산한 값이라, 그 사이에 윤년(2월29일)이 껴 있으면 실제 만기일과
+        // 하루(기간이 길수록 더) 차이가 날 수 있다.
+        if (existing && existing !== computed) {
+          var ok = confirm(
+            '이미 입력된 만기일자(' + existing + ')를 "' + btn.textContent + '" 빠른 설정값(' + computed + ')으로 바꿀까요?\n' +
+            '이미 입력하신 값이 실제 상품 자료에서 가져온 정확한 만기일이라면 "취소"를 눌러 그대로 두세요.'
+          );
+          if (!ok) return;
+        }
+        refs.maturityDateInput.value = computed;
         renderReport();
       });
     });
