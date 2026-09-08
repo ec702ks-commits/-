@@ -1,0 +1,1384 @@
+/* 색상 변수를 자체적으로 갖춘 페이지라는 걸 브라우저에 알린다 — 이게 없으면 일부
+   모바일 브라우저(Android Chrome/삼성 인터넷의 "웹사이트 다크 테마로 표시" 등)가
+   페이지 CSS와 무관하게 색을 강제로 반전/보정해버려서, 아래에서 라이트로 고정한
+   #reportSection 색상까지 다시 어둡게 바뀌는 문제가 있었다. */
+:root {
+  color-scheme: light dark;
+}
+
+:root {
+  --navy-900: #0b1f3d;
+  --navy-700: #123a72;
+  --primary: #1c5cab;
+  --primary-dark: #104281;
+  --gold: #b8892b;
+  --gold-strong: #96701e;
+  --gold-soft: #f5ead0;
+  --bg: #f3f5f9;
+  --card-bg: #ffffff;
+  --input-bg: #ffffff;
+  --btn-bg: #eef1f6;
+  --table-header-bg: #f5f7fb;
+  --tile-bg: #f7f9fc;
+  --border: #dde2ea;
+  --text: #131b2b;
+  --text-muted: #5c6576;
+  --success: #0ca30c;
+  --danger: #d03b3b;
+  --badge-better-bg: #e3f6e3;
+  --badge-worse-bg: #fbe6e6;
+  --badge-hold-bg: #e3ecfb;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --navy-900: #0a1830;
+    --navy-700: #1d4180;
+    --primary: #5b8fe8;
+    --primary-dark: #8fb3ee;
+    --gold: #d9b055;
+    --gold-strong: #e8c374;
+    --gold-soft: #3a2f18;
+    --bg: #12151b;
+    --card-bg: #1b1f28;
+    --input-bg: #232833;
+    --btn-bg: #2a2f3b;
+    --table-header-bg: #232833;
+    --tile-bg: #202531;
+    --border: #333a47;
+    --text: #e9ecf3;
+    --text-muted: #99a1b3;
+    --success: #0ca30c;
+    --danger: #d03b3b;
+    --badge-better-bg: #16301a;
+    --badge-worse-bg: #3a1d1d;
+    --badge-hold-bg: #182645;
+  }
+}
+
+:root[data-theme="dark"] {
+  --navy-900: #0a1830;
+  --navy-700: #1d4180;
+  --primary: #5b8fe8;
+  --primary-dark: #8fb3ee;
+  --gold: #d9b055;
+  --gold-strong: #e8c374;
+  --gold-soft: #3a2f18;
+  --bg: #12151b;
+  --card-bg: #1b1f28;
+  --input-bg: #232833;
+  --btn-bg: #2a2f3b;
+  --table-header-bg: #232833;
+  --tile-bg: #202531;
+  --border: #333a47;
+  --text: #e9ecf3;
+  --text-muted: #99a1b3;
+  --success: #0ca30c;
+  --danger: #d03b3b;
+  --badge-better-bg: #16301a;
+  --badge-worse-bg: #3a1d1d;
+  --badge-hold-bg: #182645;
+}
+
+:root[data-theme="light"] {
+  --navy-900: #0b1f3d;
+  --navy-700: #123a72;
+  --primary: #1c5cab;
+  --primary-dark: #104281;
+  --gold: #b8892b;
+  --gold-strong: #96701e;
+  --gold-soft: #f5ead0;
+  --bg: #f3f5f9;
+  --card-bg: #ffffff;
+  --input-bg: #ffffff;
+  --btn-bg: #eef1f6;
+  --table-header-bg: #f5f7fb;
+  --tile-bg: #f7f9fc;
+  --border: #dde2ea;
+  --text: #131b2b;
+  --text-muted: #5c6576;
+  --success: #0ca30c;
+  --danger: #d03b3b;
+  --badge-better-bg: #e3f6e3;
+  --badge-worse-bg: #fbe6e6;
+  --badge-hold-bg: #e3ecfb;
+}
+
+/* "결과 요약 미리보기"(#reportSection)는 고객에게 보여주는/인쇄하는 제안서라, 기기가
+   다크모드든 앱 테마가 다크든 항상 밝은 배경 + 어두운 글자로 고정한다. @media print에서만
+   강제로 밝게 바꾸는 방식은 일부 기기/PDF 변환기(예: 모바일 "PDF로 저장")가 @media print를
+   제대로 타지 않거나, 인쇄 시점이 아니라 화면에 보이던 상태를 그대로 캡처해서 다크 배경이
+   그대로 남는 문제가 있었다(반복 재현됨). 그래서 인쇄 시점에만 덮어쓰는 대신, 이 영역
+   안에서 쓰는 색상 변수 자체를 항상 라이트 값으로 고정해 화면 미리보기와 인쇄 결과가
+   항상 똑같게(그리고 항상 밝게) 만든다. color-scheme도 light로 못박아서, 브라우저가
+   이 영역만큼은 강제 다크 보정을 적용하지 않도록 한다(위 색상 변수 고정만으로는 브라우저의
+   강제 다크 모드 자체를 못 이기는 경우가 있었음 — 실제 기기에서 재현됨). */
+#reportSection {
+  color-scheme: light;
+  --navy-900: #0b1f3d;
+  --navy-700: #123a72;
+  --primary: #1c5cab;
+  --primary-dark: #104281;
+  --gold: #b8892b;
+  --gold-strong: #96701e;
+  --gold-soft: #f5ead0;
+  --bg: #f3f5f9;
+  --card-bg: #ffffff;
+  --input-bg: #ffffff;
+  --btn-bg: #eef1f6;
+  --table-header-bg: #f5f7fb;
+  --tile-bg: #f7f9fc;
+  --border: #dde2ea;
+  --text: #131b2b;
+  --text-muted: #5c6576;
+  --success: #0ca30c;
+  --danger: #d03b3b;
+  --badge-better-bg: #e3f6e3;
+  --badge-worse-bg: #fbe6e6;
+  --badge-hold-bg: #e3ecfb;
+  background: #ffffff;
+  color: #131b2b;
+}
+
+* { box-sizing: border-box; }
+
+html {
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: auto;
+}
+
+header {
+  padding: 26px 16px 16px;
+  text-align: center;
+}
+
+header h1 {
+  font-size: 1.42rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  margin: 0 0 8px;
+  word-break: keep-all;
+  color: var(--navy-900);
+  text-wrap: balance;
+}
+
+header .sub {
+  margin: 0 auto;
+  max-width: 30em;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+  word-break: keep-all;
+}
+
+header::after {
+  content: "";
+  display: block;
+  width: 46px;
+  height: 3px;
+  margin: 14px auto 0;
+  background: linear-gradient(90deg, var(--gold), var(--gold-strong));
+  border-radius: 2px;
+}
+
+main {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 0 16px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.card h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 1.02rem;
+  font-weight: 700;
+  margin: 0 0 12px;
+  color: var(--text);
+}
+
+.step-badge {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--navy-900);
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.hidden { display: none; }
+
+.hint {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  margin: 6px 0 0;
+  line-height: 1.4;
+}
+
+.suggest-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.suggest-row {
+  display: grid;
+  grid-template-columns: 56px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--table-header-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.suggest-label {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.suggest-value {
+  font-size: 0.9rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--navy-900);
+}
+
+input[type="date"],
+input[type="number"],
+input[type="text"],
+select,
+textarea {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 0.95rem;
+  background: var(--input-bg);
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+.mapping-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+
+.mapping-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.88rem;
+  color: var(--text-muted);
+}
+
+.two-col {
+  display: flex;
+  gap: 10px;
+}
+
+.two-col label {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.88rem;
+  color: var(--text-muted);
+}
+
+.term-quick {
+  margin: -4px 0 4px;
+}
+
+.term-quick-label {
+  display: block;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.term-quick-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.radio-row {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+  font-size: 0.9rem;
+}
+
+.radio-row label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.result-line {
+  margin: 12px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  font-size: 0.95rem;
+}
+
+.result-line strong {
+  color: var(--primary);
+  font-size: 1.15rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 16px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+  background: var(--btn-bg);
+  color: var(--text);
+}
+
+.btn.primary {
+  background: linear-gradient(135deg, var(--navy-700), var(--navy-900));
+  color: #fff;
+  width: 100%;
+  font-weight: 600;
+}
+
+.btn.primary:active {
+  background: var(--navy-900);
+}
+
+.btn.small {
+  padding: 8px 14px;
+  font-size: 0.88rem;
+}
+
+.btn.danger {
+  background: var(--card-bg);
+  color: var(--danger);
+  border: 1px solid var(--danger);
+}
+
+.btn.danger:active {
+  background: var(--badge-worse-bg);
+}
+
+.action-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#newProductRows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.product-row {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr 0.9fr auto;
+  gap: 6px;
+  align-items: center;
+}
+
+.product-row input {
+  padding: 8px 8px;
+  font-size: 0.88rem;
+}
+
+.product-row button {
+  padding: 8px 10px;
+  font-size: 0.85rem;
+}
+
+.product-row-method {
+  grid-column: 1 / -1;
+  padding: 8px 8px;
+  font-size: 0.88rem;
+}
+
+#existingProducts {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+
+.product-card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+  background: var(--tile-bg);
+}
+
+.product-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.product-index {
+  flex-shrink: 0;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.product-label-input {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+}
+
+.product-subsection {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+.product-subsection h4 {
+  margin: 0 0 10px;
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+input[type="file"] {
+  width: 100%;
+  padding: 8px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  font-size: 0.85rem;
+  background: var(--input-bg);
+  color: var(--text-muted);
+}
+
+.attachment-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.attachment-row {
+  display: grid;
+  grid-template-columns: 44px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--table-header-bg);
+}
+
+.attachment-thumb {
+  width: 44px;
+  height: 44px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--card-bg);
+}
+
+.attachment-thumb-excel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--success);
+  background: var(--badge-better-bg);
+}
+
+.attachment-thumb-pdf {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--primary);
+  background: var(--badge-hold-bg);
+}
+
+.attachment-name {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment-meta {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.report-table.attachment-excel-table {
+  width: auto;
+  min-width: 320px;
+  margin-bottom: 4px;
+  font-size: 0.72rem;
+}
+
+.attachment-excel-table td,
+.attachment-excel-table th {
+  text-align: left;
+  white-space: nowrap;
+  padding: 5px 7px;
+}
+
+.attachment-excel-table td.col-wide,
+.attachment-excel-table th.col-wide {
+  min-width: 150px;
+}
+
+.attachment-subsection {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px dashed var(--gold);
+  border-radius: 10px;
+  background: var(--gold-soft);
+}
+
+.attachment-subsection h4 {
+  color: var(--gold-strong);
+}
+
+.autofill-summary {
+  margin-top: 10px;
+}
+
+.autofill-multi-note {
+  margin: 0 0 8px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--gold-strong);
+}
+
+.autofill-note {
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 0.82rem;
+}
+
+.autofill-note p {
+  margin: 0 0 6px;
+}
+
+.autofill-note ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.autofill-target {
+  margin: 8px 0;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+}
+
+.autofill-target:first-of-type {
+  margin-top: 4px;
+}
+
+.autofill-note li {
+  margin: 2px 0;
+}
+
+.autofill-ok {
+  border: 1px solid var(--success);
+  background: var(--badge-better-bg);
+  color: var(--text);
+}
+
+.autofill-none {
+  border: 1px solid var(--border);
+  background: var(--table-header-bg);
+  color: var(--text-muted);
+}
+
+.pdf-found {
+  border: 1px solid var(--primary);
+  background: var(--badge-hold-bg);
+  color: var(--text);
+}
+
+.pdf-snippet {
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 0.78rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.flat-ratio-candidate {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.flat-ratio-candidate .cell-note {
+  margin: 0;
+  flex: 1;
+}
+
+.flat-ratio-pick-btn {
+  flex-shrink: 0;
+}
+
+.withdrawal-history {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--border);
+}
+
+[data-role="withdrawalRows"] {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 10px 0;
+}
+
+.withdrawal-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 6px;
+  align-items: center;
+}
+
+.withdrawal-row input {
+  padding: 8px 8px;
+  font-size: 0.88rem;
+}
+
+.withdrawal-row button {
+  padding: 8px 10px;
+  font-size: 0.85rem;
+}
+
+footer {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  padding: 20px 16px 40px;
+}
+
+/* ---- 결과 요약(리포트) ---- */
+
+/* 결과 요약(리포트)은 고객에게 보여주거나 PDF로 인쇄되는 "문서"이므로,
+   기기의 다크모드 설정과 무관하게 항상 밝은 문서 색상으로 고정한다.
+   (PDF 변환기에 따라 @media print이 인식되지 않거나 다크모드 배경이
+   그대로 인쇄되는 경우가 있어, 미디어쿼리에 의존하지 않고 이 안에서
+   쓰는 모든 색상 토큰 자체를 여기서 다시 고정값으로 덮어쓴다.) */
+#reportSection {
+  font-size: 0.92rem;
+  --navy-900: #0b1f3d;
+  --navy-700: #123a72;
+  --primary: #1c5cab;
+  --gold: #b8892b;
+  --gold-strong: #96701e;
+  --gold-soft: #f5ead0;
+  --bg: #ffffff;
+  --card-bg: #ffffff;
+  --input-bg: #ffffff;
+  --btn-bg: #eef1f6;
+  --table-header-bg: #f5f7fb;
+  --tile-bg: #f7f9fc;
+  --border: #dde2ea;
+  --text: #131b2b;
+  --text-muted: #5c6576;
+  --success: #0ca30c;
+  --danger: #d03b3b;
+  --badge-better-bg: #e3f6e3;
+  --badge-worse-bg: #fbe6e6;
+  --badge-hold-bg: #e3ecfb;
+  background: #ffffff !important;
+  color: #131b2b !important;
+}
+
+.report-banner {
+  background:
+    radial-gradient(120% 160% at 100% 0%, rgba(184, 137, 43, 0.25), transparent 55%),
+    linear-gradient(135deg, var(--navy-700), var(--navy-900));
+  color: #fff;
+  padding: 22px 20px;
+  margin: -16px -16px 20px;
+  border-radius: 12px 12px 0 0;
+}
+
+.report-banner-eyebrow {
+  margin: 0 0 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--gold-strong);
+}
+
+.report-banner .report-title {
+  font-size: 1.2rem;
+  font-weight: 800;
+  margin: 0 0 8px;
+  color: #fff;
+  text-wrap: balance;
+}
+
+.report-banner .report-meta {
+  color: rgba(255, 255, 255, 0.78);
+  font-size: 0.8rem;
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* .report-banner 기본값(진한 남색 그라디언트 + 흰 글자)은 화면용 디자인이고, 인쇄/PDF는
+   변환기가 그라디언트 배경을 못 그리면 흰 글자가 흰 배경 위에 남아 안 보일 위험이 있어
+   원래 @media print에서만 옅은 배경으로 바꿔줬었다. 그런데 그 전환이 @media print가
+   제대로 인식될 때만 적용돼서, 인식 안 되는 PDF 변환 경로에서는 그대로 진한 배경이
+   남는 문제가 있었다(반복 재현됨). #reportSection 안에서는 인쇄 여부와 무관하게 항상
+   옅은 배경으로 고정해 화면 미리보기와 인쇄 결과를 일치시킨다. */
+#reportSection .report-banner {
+  background: var(--gold-soft);
+  border: 2px solid var(--navy-900);
+  color: var(--text);
+}
+
+#reportSection .report-banner-eyebrow {
+  color: var(--gold-strong);
+}
+
+#reportSection .report-banner .report-title {
+  color: var(--navy-900);
+}
+
+#reportSection .report-banner .report-meta {
+  color: var(--text-muted);
+}
+
+.kpi-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin: 0 0 20px;
+}
+
+.kpi-tile {
+  background: var(--tile-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+}
+
+.kpi-tile.accent {
+  border-color: var(--gold);
+  background: linear-gradient(180deg, var(--gold-soft), var(--tile-bg) 70%);
+}
+
+.kpi-label {
+  margin: 0 0 6px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.kpi-value {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: var(--navy-900);
+  font-variant-numeric: tabular-nums;
+  word-break: break-all;
+}
+
+.kpi-tile.accent .kpi-value {
+  color: var(--gold-strong);
+}
+
+.kpi-sub {
+  margin: 4px 0 0;
+  font-size: 0.76rem;
+  color: var(--text-muted);
+}
+
+.recommend-banner {
+  border-radius: 10px;
+  padding: 16px 18px;
+  margin: 0 0 14px;
+  border: 1px solid var(--border);
+}
+
+.recommend-eyebrow {
+  margin: 0 0 6px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+
+.recommend-headline {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 800;
+  line-height: 1.35;
+}
+
+.recommend-detail {
+  margin: 6px 0 0;
+  font-size: 0.86rem;
+}
+
+.recommend-switch {
+  background: linear-gradient(135deg, var(--gold-soft), var(--tile-bg) 70%);
+  border-color: var(--gold);
+  color: var(--navy-900);
+}
+
+.recommend-switch .recommend-headline strong {
+  color: var(--gold-strong);
+}
+
+.recommend-hold {
+  background: linear-gradient(135deg, #eaf1fb, var(--tile-bg) 70%);
+  border-color: var(--primary);
+  color: var(--navy-900);
+}
+
+.recommend-hold .recommend-headline strong {
+  color: var(--primary);
+}
+
+.recommend-neutral {
+  background: var(--tile-bg);
+  color: var(--text);
+}
+
+.report-block {
+  margin-bottom: 18px;
+}
+
+.report-block h3,
+.report-block h4 {
+  font-size: 0.92rem;
+  font-weight: 700;
+  margin: 0 0 10px;
+  color: var(--navy-900);
+}
+
+.product-report {
+  margin-bottom: 8px;
+}
+
+.product-report-divided {
+  padding: 16px;
+  margin: 0 -16px 20px;
+  border-top: 6px solid var(--table-header-bg);
+}
+
+.product-report-title {
+  font-size: 1.02rem;
+  font-weight: 800;
+  color: var(--navy-900);
+  margin: 0 0 14px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid var(--gold-soft);
+}
+
+.chart-caption {
+  margin: -4px 0 10px;
+  font-size: 0.76rem;
+  color: var(--text-muted);
+}
+
+.compare-bars {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.compare-row {
+  padding: 8px 0;
+}
+
+.compare-best {
+  padding: 8px;
+  margin: 0 -8px;
+  background: var(--gold-soft);
+  border-radius: 8px;
+}
+
+.compare-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 5px;
+}
+
+.compare-name {
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.compare-sub {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+
+.compare-track {
+  position: relative;
+  height: 18px;
+  background: var(--table-header-bg);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.compare-zero {
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--border);
+}
+
+.compare-bar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 3px;
+}
+
+.compare-bar.better {
+  background: var(--success);
+}
+
+.compare-bar.worse {
+  background: var(--danger);
+}
+
+.compare-diff {
+  margin-top: 4px;
+  font-size: 0.9rem;
+  font-weight: 800;
+  text-align: right;
+}
+
+.compare-guide {
+  margin-top: 6px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: var(--tile-bg);
+  border: 1px dashed var(--border);
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  text-align: left;
+}
+
+.compare-guide strong {
+  color: var(--navy-900);
+}
+
+.conclusion-summary {
+  background: var(--tile-bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.conclusion-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.conclusion-item {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+.conclusion-item-top {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 8px;
+}
+
+.conclusion-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--navy-900);
+  color: #fff;
+  font-size: 0.7rem;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.conclusion-title {
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: var(--text);
+  flex: 1;
+  min-width: 0;
+}
+
+.conclusion-item-diff {
+  margin-top: 4px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  text-align: right;
+}
+
+.breakdown-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.breakdown-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+}
+
+.breakdown-name {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.breakdown-vals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  font-size: 0.76rem;
+  color: var(--text-muted);
+}
+
+.badge.hold {
+  background: var(--badge-hold-bg);
+  color: var(--primary);
+}
+
+.badge.neutral {
+  background: var(--table-header-bg);
+  color: var(--text-muted);
+}
+
+.better { color: var(--success); }
+.worse { color: var(--danger); }
+.hold { color: var(--primary); }
+.neutral { color: var(--text-muted); }
+
+.report-kv {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 0;
+  border-bottom: 1px dashed var(--border);
+  font-size: 0.9rem;
+}
+
+.report-kv span:first-child {
+  color: var(--text-muted);
+}
+
+.report-kv span:last-child {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.table-scroll {
+  overflow-x: auto;
+  touch-action: pan-x;
+  -webkit-overflow-scrolling: touch;
+}
+
+.report-table {
+  width: 100%;
+  min-width: 480px;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+  margin-top: 2px;
+}
+
+.report-table th,
+.report-table td {
+  border: 1px solid var(--border);
+  padding: 7px 8px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.report-table th:first-child,
+.report-table td:first-child {
+  text-align: left;
+}
+
+.report-table th {
+  background: var(--table-header-bg);
+  font-weight: 700;
+  color: var(--navy-900);
+}
+
+.report-table tr.best-row td {
+  background: var(--gold-soft);
+  font-weight: 700;
+}
+
+.cell-note {
+  display: block;
+  margin-top: 3px;
+  font-weight: 400;
+  color: var(--text-muted);
+  font-size: 0.74rem;
+  line-height: 1.35;
+}
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.badge.better {
+  background: var(--badge-better-bg);
+  color: var(--success);
+}
+
+.badge.worse {
+  background: var(--badge-worse-bg);
+  color: var(--danger);
+}
+
+.report-disclaimer {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  margin-top: 18px;
+  line-height: 1.55;
+}
+
+.report-signature {
+  margin-top: 18px;
+  padding-top: 12px;
+  border-top: 2px solid var(--gold-soft);
+  font-size: 0.85rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.report-empty {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  padding: 20px 0;
+  text-align: center;
+}
+
+@media print {
+  /* 기기가 다크모드거나 이 앱에서 다크 테마를 켜 놓은 상태(:root[data-theme="dark"])면,
+     그 선택자가 속성선택자(specificity가 더 높음)라서 이 블록의 평범한 :root 보다
+     우선순위가 높아 인쇄 시에도 다크 배경이 그대로 남는 문제가 있었다(카드 배경이
+     검게 나와 글자가 거의 안 보임). !important로 우선순위를 강제로 이겨서, 인쇄/PDF는
+     기기 설정과 무관하게 항상 밝은 배경 + 어두운 글자로 고정한다. */
+  :root {
+    --navy-900: #0b1f3d !important;
+    --navy-700: #123a72 !important;
+    --primary: #1c5cab !important;
+    --primary-dark: #104281 !important;
+    --gold: #b8892b !important;
+    --gold-strong: #96701e !important;
+    --gold-soft: #f5ead0 !important;
+    --bg: #ffffff !important;
+    --card-bg: #ffffff !important;
+    --input-bg: #ffffff !important;
+    --btn-bg: #eef1f6 !important;
+    --tile-bg: #f7f9fc !important;
+    --text: #131b2b !important;
+    --text-muted: #5c6576 !important;
+    --border: #d8dae0 !important;
+    --table-header-bg: #f5f7fb !important;
+    --badge-better-bg: #e3f6e3 !important;
+    --badge-worse-bg: #fbe6e6 !important;
+    --badge-hold-bg: #e3ecfb !important;
+    --success: #0ca30c !important;
+    --danger: #d03b3b !important;
+  }
+
+  body,
+  .card,
+  .report-block,
+  .kpi-tile,
+  .compare-bars,
+  .compare-row,
+  .conclusion-item,
+  .report-table,
+  .report-table th,
+  .report-table td {
+    background: #ffffff !important;
+    color: #131b2b !important;
+  }
+
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .no-print { display: none !important; }
+
+  body { background: #fff; }
+
+  main {
+    max-width: none;
+    padding: 0;
+    gap: 0;
+  }
+
+  .card {
+    border: none;
+    box-shadow: none;
+    padding: 0;
+    border-radius: 0;
+  }
+
+  .report-banner {
+    margin: 0 0 20px;
+    border-radius: 10px;
+    /* 인쇄/PDF 변환기가 배경색을 그리지 못해도 글자가 항상 보이도록,
+       진한 배경 대신 옅은 배경 + 진한 글자색으로 강제 전환한다. */
+    background: var(--gold-soft) !important;
+    border: 2px solid var(--navy-900);
+    color: var(--text) !important;
+  }
+
+  .report-banner-eyebrow {
+    color: var(--gold-strong) !important;
+  }
+
+  .report-banner .report-title {
+    color: var(--navy-900) !important;
+  }
+
+  .report-banner .report-meta {
+    color: var(--text-muted) !important;
+  }
+
+  /* 인쇄/PDF는 스크롤이 불가능하므로, 줄바꿈으로 지저분해지는 대신
+     글자 크기를 더 줄여서 한 줄로 한눈에 보이게 한다. */
+  .table-scroll {
+    overflow-x: visible;
+  }
+
+  .report-table.attachment-excel-table {
+    width: auto;
+    font-size: 0.54rem;
+  }
+
+  .attachment-excel-table td,
+  .attachment-excel-table th {
+    padding: 3px 4px;
+  }
+
+  /* 인쇄 중 페이지 경계에서 한 항목이 중간에 잘리지 않도록 한다. */
+  .compare-bars,
+  .compare-row,
+  .conclusion-item,
+  .kpi-tile,
+  .recommend-banner,
+  .report-table tr {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  /* 소제목만 페이지 맨 아래에 남고 내용은 다음 페이지로 넘어가지 않도록 한다. */
+  .report-block h3,
+  .report-block h4 {
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+
+  /* 명세(기존상품)가 여러 건이면(.product-report-divided) 첫 번째 명세부터 포함해서
+     모두 새 페이지에서 시작한다 — 앞의 결론 요약/합계 페이지와 분리되게. 명세가
+     하나뿐이면(그 클래스가 안 붙음) 배너 바로 뒤에 이어서 보여준다. */
+  .product-report-divided {
+    break-before: page;
+    page-break-before: always;
+  }
+}
